@@ -1,0 +1,19 @@
+[package]
+name = "wf_sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Headless deterministic match simulator, 2-ply tactical AI planner, replay verifier, and 102-match tournament runner for Wildfront Battlegrounds."
+
+[[bin]]
+name = "wf_sim"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+hexx.workspace = true
+ron.workspace = true
+serde.workspace = true
+wf_core.workspace = true

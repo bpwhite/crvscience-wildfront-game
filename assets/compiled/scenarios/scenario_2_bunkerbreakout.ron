@@ -1,0 +1,10 @@
+(
+    scenario_id: BunkerBreakout,
+    title: "2. Bunker Breakout (Ruined Bunker Caldera)",
+    seed: 544345093,
+    biome: RuinedBunkerCaldera,
+    symmetry: AsymmetricSiege,
+    board_radius: 7,
+    total_hexes: 169,
+    victory: HoldVaultTurns(target_turns: 12),
+)

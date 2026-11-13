@@ -1,0 +1,21 @@
+(
+    deck_name: "Mammal + Reptile 250-Pt Combined-Arms Deck",
+    primary_faction: Mammal,
+    secondary_faction: Reptile,
+    point_budget: 250,
+    entries: [
+        (card_key: "Command Center (Australia)", quantity: 1),
+        (card_key: "Supply Depot", quantity: 1),
+        (card_key: "Commander (Australia)", quantity: 1),
+        (card_key: "Control Node", quantity: 1),
+        (card_key: "Factory", quantity: 1),
+        (card_key: "Drone", quantity: 1),
+        (card_key: "Mecharoo (Kanga Mech)", quantity: 1),
+        (card_key: "Flamer Croc", quantity: 1),
+        (card_key: "Combat Koala", quantity: 1),
+        (card_key: "Cobra Striker", quantity: 1),
+        (card_key: "Infiltrator Vine Python", quantity: 1),
+        (card_key: "Recon Gila", quantity: 1),
+        (card_key: "Cargo Drop", quantity: 1)
+    ],
+)

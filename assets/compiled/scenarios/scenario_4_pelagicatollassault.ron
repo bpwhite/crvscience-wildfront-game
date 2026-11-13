@@ -1,0 +1,10 @@
+(
+    scenario_id: PelagicAtollAssault,
+    title: "4. Pelagic Atoll Assault (Sunken Oceanic Atoll)",
+    seed: 544347111,
+    biome: SunkenAtoll,
+    symmetry: Rotational180,
+    board_radius: 8,
+    total_hexes: 217,
+    victory: ControlIslandRelays(required_relays: 3, target_turns: 8),
+)

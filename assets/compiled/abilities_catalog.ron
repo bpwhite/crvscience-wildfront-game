@@ -1,0 +1,34 @@
+(
+    abilities: [
+        (display_name: "Deploy Unit Card", trigger: Active, action_cost: 1, munition_cost: 0, max_range: 2, cooldown_turns: 0, effect_summary: "Spawns voxel squad/rig from 5-card hand within 2 hexes of backline/base; spends card's ENC from Home Supply."),
+        (display_name: "Axial Hex Move", trigger: Active, action_cost: 1, munition_cost: 0, max_range: 4, cooldown_turns: 0, effect_summary: "Traverses up to MOVE hexes (blocked by dElev>=2 cliffs, mountains, ravines, deep water unless Flyer/Amphibious). Clears Target Lock."),
+        (display_name: "Ranged 1+ Fire", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 4, cooldown_turns: 0, effect_summary: "D6 Hit = 2+ at 1 hex (+1/hex + Evade; 6 always hits). Damage = min(D6, STR) + clamp(dSTR, -2, +3) - Armor. No retaliation."),
+        (display_name: "Laser Pulse Fire", trigger: Active, action_cost: 1, munition_cost: 0, max_range: 3, cooldown_turns: 1, effect_summary: "0 Munitions cost, max 1 shot/turn cooldown (Laser Turret, Timberwolves, Optic-Laser Shark)."),
+        (display_name: "Melee Assault / Melee 0", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 2, cooldown_turns: 0, effect_summary: "Auto-hits ground targets; triggers defender Melee 0 retaliation unless attacker has Flight or Stealth Ambush."),
+        (display_name: "Fortify & Entrench", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 0, cooldown_turns: 0, effect_summary: "Adds +1 Fortified stack (max 3; blocks 1 attack/stack). Heavy units project Entrench blocking enemy pass-through."),
+        (display_name: "Rest & Wake", trigger: Active, action_cost: 1, munition_cost: 0, max_range: 0, cooldown_turns: 1, effect_summary: "Unit skips actions to regenerate +1 STR/HP or purge 1 Poisoned stack at next turn start; Wake or taking fire ends Rest."),
+        (display_name: "Supply Transfer / Cargo Drop", trigger: Active, action_cost: 1, munition_cost: 0, max_range: 4, cooldown_turns: 0, effect_summary: "Moves Munitions across Supply Range or delivers +5 Munitions to Supply Depot via Cargo Drop artifact."),
+        (display_name: "Field Heal & Detoxify", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 3, cooldown_turns: 0, effect_summary: "Medics restore +1 STR/HP (up to base STR) OR purge 1 Poisoned + 1 Rooted/Webbed stack on friendly unit in range."),
+        (display_name: "Radar Target Lock", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 4, cooldown_turns: 0, effect_summary: "Applies Target Locked (+1 to all friendly ranged hit rolls against target until target moves >=1 hex; Stealth is immune)."),
+        (display_name: "Venom Spit / Cnidocytes", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 2, cooldown_turns: 0, effect_summary: "Applies 1 Poisoned stack (2 stacks for Cnidarians, max 3); deals 1 armor-piercing STR damage at start of victim's turn."),
+        (display_name: "Web & Root Snare", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 2, cooldown_turns: 1, effect_summary: "Arachnids & Plant Traps apply Rooted (MOVE=0, -1 Evade for 2 turns or until Detoxified by Medic)."),
+        (display_name: "Stealth Infiltrate", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 3, cooldown_turns: 0, effect_summary: "Moves through enemy-occupied hexes to an empty tile; passive immunity to Radar Target Lock."),
+        (display_name: "Subterranean Burrow", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 1, cooldown_turns: 0, effect_summary: "Toggles Burrowed state: immune to ranged fire from dist >=2, moves 1 hex/turn ignoring surface fallout, ambushes at dist 1."),
+        (display_name: "Saboteur Raid", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 1, cooldown_turns: 1, effect_summary: "Steals 1 carried Munition from enemy into own ENC (or spends 2 Munitions to apply Confused) + shifts 1 hex."),
+        (display_name: "Build Armored Dam / Ford", trigger: Active, action_cost: 1, munition_cost: 2, max_range: 1, cooldown_turns: 2, effect_summary: "Blockade Beaver constructs a STR 4 passable dam/barricade across a Deep River hex or fortified land choke."),
+        (display_name: "Voltaic Arc Stun", trigger: Active, action_cost: 1, munition_cost: 1, max_range: 2, cooldown_turns: 2, effect_summary: "Voltaic Eel / Shield Gen strips 1 Shield or Fortify stack and disables target's Melee 0 retaliation for 1 turn."),
+        (display_name: "Genetic Splice Surge", trigger: Active, action_cost: 1, munition_cost: 0, max_range: 2, cooldown_turns: 0, effect_summary: "Consumable Faction Artifact: grants +1 temporary Shield & purges Poison/Root for friendly faction units within 2 hexes.")
+    ],
+    faction_passives: [
+        (faction: Human, doctrine_name: "Command Uplink", bonus_effect: "Autonomous (no Node leash); Human infantry gain +1 Range adjacent to Control Node/Radar.", tactical_tradeoff: "Radiation hurts unshielded bio-humans."),
+        (faction: Mammal, doctrine_name: "Pack Tactics", bonus_effect: "+1 to Hit rolls when adjacent to >=1 friendly Mammal.", tactical_tradeoff: "Standard 2-3 hex psychic leash & biological toxin susceptibility."),
+        (faction: Reptile, doctrine_name: "Ectothermic Scales", bonus_effect: "+1 Move on Desert/Savannah/Caldera & recovers 1 Armor on Rest (replaces raw -1 STR penalty).", tactical_tradeoff: "-1 Move on Cryo/Deep Water."),
+        (faction: Plant, doctrine_name: "Mycelial Network", bonus_effect: "Autonomous, PoisonImmune, and Traps deploy hidden within 2 hexes of any friendly Plant.", tactical_tradeoff: "Traps are stationary (MOVE 0)."),
+        (faction: Bird, doctrine_name: "Aerial Dominance", bonus_effect: "Flight ignores cliffs/rivers/retaliation + +1 Move retreating toward Command Center.", tactical_tradeoff: "Cannot use Rough cover or Burrow."),
+        (faction: Arachnid, doctrine_name: "Neurotoxic Webs", bonus_effect: "Root/Web hits against 0-Armor targets also apply 1 Poisoned stack.", tactical_tradeoff: "Tighter 2-hex Node leash in enemy territory."),
+        (faction: Insect, doctrine_name: "Eusocial Swarm", bonus_effect: "-1 Munition deploy cost (min 1) when deployed adjacent to another Insect.", tactical_tradeoff: "-1 Evade when wounded below 50% STR."),
+        (faction: Fish, doctrine_name: "Pelagic Schooling", bonus_effect: "+1 Move on Water hexes & 4+ D6 Water Shield blocks Poison.", tactical_tradeoff: "Pure Aquatic units require River/Ocean channels."),
+        (faction: Cnidarian, doctrine_name: "Bio-Synapse", bonus_effect: "Poison applies 2 stacks & Heavy Cnidarians project Node Radius 2.", tactical_tradeoff: "Low kinetic Armor against melee rushes."),
+        (faction: Amphibian, doctrine_name: "Torpor Regen", bonus_effect: "Rest on Water/Jungle/Rough heals +1 STR + grants Stealth until next turn.", tactical_tradeoff: "-1 max ENC carried on Desert/Caldera tiles.")
+    ],
+)

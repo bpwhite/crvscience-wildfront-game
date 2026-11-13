@@ -1,0 +1,10 @@
+(
+    scenario_id: EmergenceSkirmish,
+    title: "1. Emergence Skirmish (Savannah Dustbowl)",
+    seed: 544344084,
+    biome: SavannahDustbowl,
+    symmetry: Rotational180,
+    board_radius: 6,
+    total_hexes: 127,
+    victory: DestroyEnemyCommandCenter,
+)

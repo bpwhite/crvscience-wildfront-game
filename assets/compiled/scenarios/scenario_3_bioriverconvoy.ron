@@ -1,0 +1,10 @@
+(
+    scenario_id: BioRiverConvoy,
+    title: "3. Bio-River Convoy (Overgrown Bio-Jungle)",
+    seed: 544346102,
+    biome: OvergrownBioJungle,
+    symmetry: AxialMirror,
+    board_radius: 7,
+    total_hexes: 169,
+    victory: SalvageMunitionsOrRaze(target_munitions: 15),
+)

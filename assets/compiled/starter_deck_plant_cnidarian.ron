@@ -1,0 +1,21 @@
+(
+    deck_name: "Plant + Cnidarian 250-Pt Tournament Deck",
+    faction: Australia,
+    primary_faction: Plant,
+    secondary_faction: Cnidarian,
+    is_pure_biotype: false,
+    point_budget: 250,
+    entries: [
+        (card_key: "Command Center (Australia)", quantity: 1),
+        (card_key: "Supply Depot", quantity: 1),
+        (card_key: "Commander (Australia)", quantity: 1),
+        (card_key: "Control Node", quantity: 1),
+        (card_key: "Hospital", quantity: 1),
+        (card_key: "Cargo Drop", quantity: 1),
+        (card_key: "Spore-Pod Mortar", quantity: 1),
+        (card_key: "Mainframe Man-o'-War", quantity: 1),
+        (card_key: "Jelly Zeppelin", quantity: 1),
+        (card_key: "Spore Monsoon", quantity: 1),
+        (card_key: "Stealth Sundew", quantity: 3),
+    ],
+)

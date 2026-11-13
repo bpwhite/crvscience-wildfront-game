@@ -1,0 +1,10 @@
+(
+    scenario_id: KingOfTheControlSpire,
+    title: "5. King of the Control Spire (Irradiated Badlands)",
+    seed: 544348120,
+    biome: IrradiatedBadlands,
+    symmetry: Rotational180,
+    board_radius: 6,
+    total_hexes: 127,
+    victory: HoldCentralControlSpire(target_turns: 5),
+)
