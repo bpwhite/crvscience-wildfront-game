@@ -15,7 +15,7 @@ license:
   - Apache-2.0
 preferred-citation:
   type: article
-  title: "Wildfront: Deterministic Hexagonal Strategy Game, Sparse 64-Tree Voxel Raymarching, and Procedural Generation Dynamics"
+  title: "Wildfront: Turn-Based Hex Strategy Game with Voxel Graphics and Procedural Map Generation"
   authors:
     - family-names: "White"
       given-names: "Bryan P."

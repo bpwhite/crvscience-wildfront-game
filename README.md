@@ -107,7 +107,7 @@ Total sculpted solid voxels: **336,891** across **22,619** sparse `4×4×4` GPU 
 ## Citation & CRV Science Apps Hub
 
 - **CRV Science Apps Hub**: [https://crvscience.com/apps](https://crvscience.com/apps)
-- **Companion Preprint (`APP-PREPRINT-12`)**: *Wildfront: Deterministic Hexagonal Strategy Game, Sparse 64-Tree Voxel Raymarching, and Procedural Generation Dynamics* — [https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics](https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics)
+- **Companion Preprint (`APP-PREPRINT-12`)**: *Wildfront: Turn-Based Hex Strategy Game with Voxel Graphics and Procedural Map Generation* — [https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics](https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics)
 - **Concept DOI**: [10.5281/zenodo.24222396](https://doi.org/10.5281/zenodo.24222396)
 - **Repository**: [https://github.com/bpwhite/crvscience-wildfront-game](https://github.com/bpwhite/crvscience-wildfront-game)
 - **Validation Telemetry**: See [`validation/README.md`](validation/README.md) (`cargo test --workspace`).
@@ -115,7 +115,7 @@ Total sculpted solid voxels: **336,891** across **22,619** sparse `4×4×4` GPU 
 ```bibtex
 @article{white2026wildfront,
   author  = {White, Bryan P.},
-  title   = {Wildfront: Deterministic Hexagonal Strategy Game, Sparse 64-Tree Voxel Raymarching, and Procedural Generation Dynamics},
+  title   = {Wildfront: Turn-Based Hex Strategy Game with Voxel Graphics and Procedural Map Generation},
   journal = {CRV Science Apps Preprints},
   year    = {2026},
   doi     = {10.5281/zenodo.24222396},
