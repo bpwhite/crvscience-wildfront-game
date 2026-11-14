@@ -15,7 +15,7 @@ license:
   - Apache-2.0
 preferred-citation:
   type: article
-  title: "Wildfront: Deterministic Hexagonal Ecological Strategy, Combinatorial Bio-Faction Deck Dynamics, and Voxel Raymarching"
+  title: "Wildfront: Deterministic Hexagonal Strategy Game, Sparse 64-Tree Voxel Raymarching, and Procedural Generation Dynamics"
   authors:
     - family-names: "White"
       given-names: "Bryan P."
