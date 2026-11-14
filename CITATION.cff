@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "crvscience-wildfront-game"
+message: "If you use Wildfront or its validation telemetry in academic work, please cite both this software repository and its companion CRV Science Apps Preprint."
+type: software
+authors:
+  - family-names: "White"
+    given-names: "Bryan P."
+    affiliation: "CRV Science Labs"
+version: "3.4.1"
+doi: "10.5281/zenodo.24222396"
+url: "https://crvscience.com/apps"
+repository-code: "https://github.com/bpwhite/crvscience-wildfront-game"
+license:
+  - MIT
+  - Apache-2.0
+preferred-citation:
+  type: article
+  title: "Wildfront: Deterministic Hexagonal Ecological Strategy, Combinatorial Bio-Faction Deck Dynamics, and Voxel Raymarching"
+  authors:
+    - family-names: "White"
+      given-names: "Bryan P."
+      affiliation: "CRV Science Labs"
+  year: 2026
+  journal: "CRV Science Apps Preprints"
+  doi: "10.5281/zenodo.24222396"
+  url: "https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics"
+  notes: "Preprint ID: APP-PREPRINT-12"

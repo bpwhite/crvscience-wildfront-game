@@ -1,0 +1,82 @@
+{
+  "repository": "crvscience-wildfront-game",
+  "version": "3.4.1",
+  "slug": "wildfront-hexagonal-ecological-tactics",
+  "preprint_id": "APP-PREPRINT-12",
+  "concept_doi": "10.5281/zenodo.24222396",
+  "preprint_url": "https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics",
+  "t1_hex_determinism_replay": {
+"axial_symmetry_checks": 160,
+"cliff_blocks_observed": 0,
+"water_blocks_terrestrial": 732,
+"flyer_bypasses_observed": 0,
+"aquatic_water_passes": 732,
+"deterministic_replays_verified": 3,
+"total_verified_action_steps": 237,
+"scenarios": [
+      {"scenario": "1. Emergence Skirmish (Savannah Dustbowl)", "tiles": 127, "cover_tiles": 36, "water_tiles": 13, "directed_cliff_edges": 0},
+      {"scenario": "2. Bunker Breakout (Ruined Bunker Caldera)", "tiles": 169, "cover_tiles": 22, "water_tiles": 11, "directed_cliff_edges": 0},
+      {"scenario": "3. Bio-River Convoy (Overgrown Bio-Jungle)", "tiles": 169, "cover_tiles": 35, "water_tiles": 26, "directed_cliff_edges": 0},
+      {"scenario": "4. Pelagic Atoll Assault (Sunken Oceanic Atoll)", "tiles": 217, "cover_tiles": 37, "water_tiles": 73, "directed_cliff_edges": 0},
+      {"scenario": "5. King of the Control Spire (Irradiated Badlands)", "tiles": 127, "cover_tiles": 19, "water_tiles": 15, "directed_cliff_edges": 0}
+    ],
+"replay_runs": [
+      {"scenario": "5. King of the Control Spire (Irradiated Badlands)", "seed": 209934250803201, "winner_team": 1, "turns": 8, "recorded_steps": 60, "final_state_hash_hex": "0x502ecab43d99b1fd"},
+      {"scenario": "3. Bio-River Convoy (Overgrown Bio-Jungle)", "seed": 209934250803202, "winner_team": 1, "turns": 10, "recorded_steps": 78, "final_state_hash_hex": "0xb27519b6313e86df"},
+      {"scenario": "2. Bunker Breakout (Ruined Bunker Caldera)", "seed": 209934250803203, "winner_team": 1, "turns": 14, "recorded_steps": 99, "final_state_hash_hex": "0xd27c65a5437a354c"}
+    ]
+},
+  "t2_deck_audit_and_round_robin": {
+"total_roster_cards": 152,
+"bio_combat_unit_cards": 113,
+"support_installation_cards": 13,
+"tactical_and_artifact_cards": 26,
+"unit_plus_infra_cards": 126,
+"cost_vs_weighted_utility_r": 0.998889,
+"mean_deck_points": 17.84,
+"mean_weighted_utility_points": 17.80,
+"tournament_ai_difficulty": "Veteran (1-Ply EV Focus)",
+"total_matches": 102,
+"decisive_matches": 82,
+"p1_wins": 46,
+"p2_wins": 36,
+"median_turns": 14.00,
+"tournament_wall_ms": 56427.79,
+"csv_bytes": 10415,
+"combat_class_counts": { "Artifact": 7, "Commander": 6, "ControlNode": 1, "Heavy": 27, "Installation": 6, "Light": 22, "Medic": 9, "Medium": 29, "SupplyDepot": 1, "Support": 9, "SupportInstallation": 5, "TacticalDeployment": 19, "Trap": 11 },
+"standings": [
+      {"name": "Australia", "category": "Continent", "games": 10, "wins": 8, "win_rate_pct": 80.00, "avg_turns": 15.10},
+      {"name": "Africa", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 27.30},
+      {"name": "NorthAmerica", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 27.40},
+      {"name": "SouthAmerica", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 17.30},
+      {"name": "Europe", "category": "Continent", "games": 10, "wins": 4, "win_rate_pct": 40.00, "avg_turns": 21.50},
+      {"name": "Asia", "category": "Continent", "games": 10, "wins": 3, "win_rate_pct": 30.00, "avg_turns": 21.20},
+      {"name": "Pure Insect", "category": "Pure Bio-Type", "games": 16, "wins": 9, "win_rate_pct": 56.25, "avg_turns": 18.75},
+      {"name": "Pure Mammal", "category": "Pure Bio-Type", "games": 16, "wins": 9, "win_rate_pct": 56.25, "avg_turns": 23.00},
+      {"name": "Pure Cnidarian", "category": "Pure Bio-Type", "games": 16, "wins": 8, "win_rate_pct": 50.00, "avg_turns": 20.81},
+      {"name": "Pure Plant", "category": "Pure Bio-Type", "games": 16, "wins": 7, "win_rate_pct": 43.75, "avg_turns": 18.81},
+      {"name": "Pure Bird", "category": "Pure Bio-Type", "games": 16, "wins": 6, "win_rate_pct": 37.50, "avg_turns": 22.81},
+      {"name": "Pure Amphibian", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 25.94},
+      {"name": "Pure Fish", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 25.81},
+      {"name": "Pure Reptile", "category": "Pure Bio-Type", "games": 16, "wins": 3, "win_rate_pct": 18.75, "avg_turns": 28.44},
+      {"name": "Pure Arachnid", "category": "Pure Bio-Type", "games": 16, "wins": 2, "win_rate_pct": 12.50, "avg_turns": 20.88}
+    ]
+},
+  "t3_svo_64tree_raymarching": {
+"compiled_vox_rigs": 170,
+"total_nodes": 32717,
+"total_leaf_bricks": 589863,
+"total_non_empty_voxels": 10039096,
+"dense_bounding_voxels": 423958096,
+"gpu_svo_buffer_bytes": 47712512,
+"dense_to_svo_byte_ratio": 8.89,
+"exterior_aabb_miss_rays": 48,
+"exterior_aabb_misses_verified": 48,
+"interior_rays_cast": 1176,
+"interior_voxel_hits": 542,
+"benchmark_rays": 24000,
+"benchmark_hits": 14691,
+"benchmark_elapsed_ms": 89.23,
+"cpu_debug_rays_per_sec": 268976.0
+}
+}

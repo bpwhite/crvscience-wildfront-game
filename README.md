@@ -103,3 +103,24 @@ Total sculpted solid voxels: **336,891** across **22,619** sparse `4×4×4` GPU 
 - **In-Game Studios (`wf_client`)**:
   - **`F3` Hex Map & Scenario Studio**: Live 3D viewport terrain painting with 180-degree Rotational and Axial Mirror symmetry brushes plus `.ron` scenario export/import.
   - **`F4` Replay Scrubber & Battle Telemetry Theater**: Turn-by-turn keyframe scrubbing, tactical branching ("What-If" play from any turn), live EHP curves, and `.ron` timeline export/import.
+
+## Citation & CRV Science Apps Hub
+
+- **CRV Science Apps Hub**: [https://crvscience.com/apps](https://crvscience.com/apps)
+- **Companion Preprint (`APP-PREPRINT-12`)**: *Wildfront: Deterministic Hexagonal Ecological Strategy, Combinatorial Bio-Faction Deck Dynamics, and Voxel Raymarching* — [https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics](https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics)
+- **Concept DOI**: [10.5281/zenodo.24222396](https://doi.org/10.5281/zenodo.24222396)
+- **Repository**: [https://github.com/bpwhite/crvscience-wildfront-game](https://github.com/bpwhite/crvscience-wildfront-game)
+- **Validation Telemetry**: See [`validation/README.md`](validation/README.md) (`cargo test --workspace`).
+
+```bibtex
+@article{white2026wildfront,
+  author  = {White, Bryan P.},
+  title   = {Wildfront: Deterministic Hexagonal Ecological Strategy, Combinatorial Bio-Faction Deck Dynamics, and Voxel Raymarching},
+  journal = {CRV Science Apps Preprints},
+  year    = {2026},
+  doi     = {10.5281/zenodo.24222396},
+  url     = {https://crvscience.com/apps/preprints/wildfront-hexagonal-ecological-tactics},
+  note    = {Preprint ID: APP-PREPRINT-12; Software version 3.4.1}
+}
+```
+
