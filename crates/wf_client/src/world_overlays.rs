@@ -126,7 +126,7 @@ pub fn draw_world_space_overlays(
             .clamp(0.0, 1.0);
             let bar_col = str_bar_color(ent.team_id, hp_frac);
 
-            Area::new(Id::new(("wf_unit_world_plate", ent.uid)))
+            Area::new(Id::unique(("wf_unit_world_plate", ent.uid)))
                 .order(Order::Background)
                 .interactable(false)
                 .movable(false)
@@ -319,7 +319,7 @@ pub fn draw_world_space_overlays(
         let sub_col = Color32::from_rgba_unmultiplied(232, 240, 246, alpha);
         let bg = Color32::from_rgba_unmultiplied(10, 16, 22, (fade * 228.0) as u8);
 
-        Area::new(Id::new(("wf_combat_d6_popup", popup.id)))
+        Area::new(Id::unique(("wf_combat_d6_popup", popup.id)))
             .order(Order::Middle)
             .interactable(false)
             .movable(false)

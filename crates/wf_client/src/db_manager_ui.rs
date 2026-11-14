@@ -10,7 +10,7 @@
 
 use egui::{Align2, Color32, Frame, Margin, Order, RichText, ScrollArea, Stroke, Ui, Window};
 use wf_core::{
-    AbilityCatalog, BioTypeCardDef, CombatClass, DeckList, FactionCardDef, GraveyardFacility, OrganismFaction, OriginAllegiance, RosterManifest, UnitCardDef,
+    AbilityCatalog, BioTypeCardDef, CombatClass, DeckList, FactionCardDef, OrganismFaction, RosterManifest, UnitCardDef,
 };
 use wf_core::sqlite_db::{delete_unit_from_sqlite, save_unit_to_sqlite, DEFAULT_SQLITE_DB_PATH};
 use std::path::Path;
@@ -117,7 +117,6 @@ impl DatabaseManagerStudio {
             return;
         }
         let mut open_flag = self.is_open;
-        let lookup = roster.index_by_key();
 
         Window::new("🗄 IN-GAME UNIT & FACTION DATABASE MANAGEMENT SYSTEM (F2)")
             .open(&mut open_flag)
@@ -149,6 +148,7 @@ impl DatabaseManagerStudio {
                     for (tab, lbl) in [
                         (DatabaseTab::UnitCatalog, "📋 152-Card Catalog"),
                         (DatabaseTab::FactionDoctrines, "🧬 10 Faction Doctrines"),
+                        (DatabaseTab::CommandCards, "🎴 3 Command Cards"),
                         (DatabaseTab::ClassMatrix, "⚔ Combat Class Matrix"),
                     ] {
                         if ui.selectable_label(self.active_tab == tab, RichText::new(lbl).strong()).clicked() {
@@ -170,7 +170,7 @@ impl DatabaseManagerStudio {
 
                 match self.active_tab {
                     DatabaseTab::UnitCatalog => {
-                        self.render_unit_catalog(ui, roster, active_deck, &lookup, audio);
+                        self.render_unit_catalog(ui, roster, active_deck, audio);
                     }
                     DatabaseTab::FactionDoctrines => {
                         self.render_faction_doctrines(ui);
@@ -253,9 +253,8 @@ impl DatabaseManagerStudio {
     fn render_unit_catalog(
         &mut self,
         ui: &mut Ui,
-        roster: &RosterManifest,
+        roster: &mut RosterManifest,
         active_deck: &mut DeckList,
-        lookup: &std::collections::BTreeMap<&str, &UnitCardDef>,
         audio: &mut SpatialAudioEngine,
     ) {
         // Filter & Search Controls
@@ -315,7 +314,9 @@ impl DatabaseManagerStudio {
                 (SortColumn::Points, "Pts"),
                 (SortColumn::Strength, "STR"),
                 (SortColumn::Encumbrance, "ENC"),
+                (SortColumn::Armor, "ARM"),
                 (SortColumn::Movement, "MOV"),
+                (SortColumn::Evade, "EVD"),
                 (SortColumn::Name, "Name"),
             ] {
                 let is_active = self.sort_column == col;
@@ -338,7 +339,7 @@ impl DatabaseManagerStudio {
 
         // Filter and Sort Unit List
         let q = self.search_query.trim().to_lowercase();
-        let mut filtered: Vec<&UnitCardDef> = roster
+        let mut filtered: Vec<UnitCardDef> = roster
             .units
             .iter()
             .filter(|u| {
@@ -357,6 +358,7 @@ impl DatabaseManagerStudio {
                 }
                 true
             })
+            .cloned()
             .collect();
 
         filtered.sort_by(|a, b| {
@@ -392,7 +394,7 @@ impl DatabaseManagerStudio {
                         .id_salt("db_unit_master_scroll")
                         .max_height(460.0)
                         .show(ui, |ui| {
-                            for card in filtered {
+                            for card in &filtered {
                                 let is_selected = self.selected_card_key == card.card_key;
                                 let badge_col = Self::faction_color(card.faction);
 
@@ -623,7 +625,7 @@ impl DatabaseManagerStudio {
                                             card_clone.strength_hp, card_clone.encumbrance, card_clone.armor, card_clone.shield,
                                             card_clone.movement, card_clone.evade, card_clone.melee_range, card_clone.ranged_distance
                                         )).strong());
-                                        ui.label(RichText::new(format!("Voxel Rig: {}  |  Models/Hex: {}", card_clone.default_vox_slug(), card_clone.squad_model_count)).small().color(Color32::from_rgb(160, 190, 205)));
+                                        ui.label(RichText::new(format!("Voxel Rig: {}  |  Models/Hex: {}  |  Dice: {}", card_clone.default_vox_slug(), card_clone.squad_model_count, Self::dice_hardware_note(&card_clone))).small().color(Color32::from_rgb(160, 190, 205)));
                                         ui.label(RichText::new(format!("Provenance: {}", card_clone.provenance_note)).small().italics().color(Color32::from_rgb(140, 170, 185)));
                                     }
                                 });

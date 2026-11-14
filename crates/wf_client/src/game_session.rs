@@ -569,12 +569,12 @@ impl ClientMatchState {
         self.combat_log.push(format!(
             "P1 Command: [{:?}] • {}",
             p1_deck.faction,
-            if p1_deck.is_pure_biotype() { format!("Pure {:?}", p1_deck.primary_faction) } else { format!("{:?}+{{:?}}", p1_deck.primary_faction, p1_deck.secondary_faction) }
+            if p1_deck.is_pure_biotype() { format!("Pure {:?}", p1_deck.primary_faction) } else { format!("{:?}+{:?}", p1_deck.primary_faction, p1_deck.secondary_faction) }
         ));
         self.combat_log.push(format!(
             "P2 Command: [{:?}] • {}",
             p2_deck.faction,
-            if p2_deck.is_pure_biotype() { format!("Pure {:?}", p2_deck.primary_faction) } else { format!("{:?}+{{:?}}", p2_deck.primary_faction, p2_deck.secondary_faction) }
+            if p2_deck.is_pure_biotype() { format!("Pure {:?}", p2_deck.primary_faction) } else { format!("{:?}+{:?}", p2_deck.primary_faction, p2_deck.secondary_faction) }
         ));
     }
 
@@ -1434,14 +1434,15 @@ impl ClientMatchState {
         }
         let act_rem = self.economy.actions_remaining.get(&team_id).copied().unwrap_or(0);
         let mun_rem = self.economy.home_base_munitions.get(&team_id).copied().unwrap_or(0);
-        if act_rem < fac.active_action_cost || mun_rem < fac.active_munition_cost {
+        let mun_cost = u16::from(fac.active_munition_cost);
+        if act_rem < fac.active_action_cost || mun_rem < mun_cost {
             self.combat_log.push(format!("Insufficient Actions ({}/{}) or Munitions ({}/{}) for Faction Ability!", act_rem, fac.active_action_cost, mun_rem, fac.active_munition_cost));
             return false;
         }
 
         self.economy.faction_ability_used.insert(team_id, true);
         *self.economy.actions_remaining.entry(team_id).or_insert(1) -= fac.active_action_cost;
-        *self.economy.home_base_munitions.entry(team_id).or_insert(0) -= fac.active_munition_cost;
+        *self.economy.home_base_munitions.entry(team_id).or_insert(0) -= mun_cost;
 
         let hq_hex = self.entities.iter().find(|e| e.team_id == team_id && e.card.combat_class == CombatClass::Installation).map(|e| e.hex).unwrap_or(Hex::new(0, 0));
         let anchor_w = hex_world_anchor(&self.scenario.map, hq_hex, 0.4);
@@ -1598,14 +1599,15 @@ impl ClientMatchState {
         }
         let act_rem = self.economy.actions_remaining.get(&team_id).copied().unwrap_or(0);
         let mun_rem = self.economy.home_base_munitions.get(&team_id).copied().unwrap_or(0);
-        if act_rem < bio.primal_surge_cost.0 || mun_rem < bio.primal_surge_cost.1 {
+        let mun_cost = u16::from(bio.primal_surge_cost.1);
+        if act_rem < bio.primal_surge_cost.0 || mun_rem < mun_cost {
             self.combat_log.push("Insufficient Actions or Munitions for Primal Surge!".into());
             return false;
         }
 
         self.economy.primal_surge_used.insert(team_id, true);
         *self.economy.actions_remaining.entry(team_id).or_insert(1) -= bio.primal_surge_cost.0;
-        *self.economy.home_base_munitions.entry(team_id).or_insert(0) -= bio.primal_surge_cost.1;
+        *self.economy.home_base_munitions.entry(team_id).or_insert(0) -= mun_cost;
 
         let enemy_team = if team_id == 1 { 2 } else { 1 };
         let hq_hex = self.entities.iter().find(|e| e.team_id == team_id && e.card.combat_class == CombatClass::Installation).map(|e| e.hex).unwrap_or(Hex::new(0, 0));
@@ -2137,7 +2139,12 @@ impl ClientMatchState {
             self.entities[att_idx].unit.clone(),
             self.entities[def_idx].unit.clone(),
         );
-        let outcome = resolve_attack(&mut att_u, &mut def_u, ctx, hit_d6, dmg_d6);
+        let effective_hit_d6 = if pure_mammal_apex {
+            hit_d6.saturating_add(1).min(6)
+        } else {
+            hit_d6
+        };
+        let outcome = resolve_attack(&mut att_u, &mut def_u, ctx, effective_hit_d6, dmg_d6);
 
         if outcome.hit_succeeded {
             // Passive Doctrine: North America Hardened Core (Laser deals +1 damage on natural 6 hit roll)
@@ -3255,7 +3262,7 @@ impl ClientMatchState {
         // 1. Evaluate AI Faction Command Ability
         let ai_act = self.economy.actions_remaining.get(&2).copied().unwrap_or(0);
         let ai_mun = self.economy.home_base_munitions.get(&2).copied().unwrap_or(0);
-        if ai_act >= ai_fac.active_action_cost && ai_mun >= ai_fac.active_munition_cost {
+        if ai_act >= ai_fac.active_action_cost && ai_mun >= u16::from(ai_fac.active_munition_cost) {
             let should_trigger = match ai_deck.faction {
                 OriginAllegiance::Europe => self.entities.iter().any(|e| e.team_id == 2 && !e.card.combat_class.is_building() && e.unit.fortified_stacks == 0),
                 OriginAllegiance::Australia => self.entities.iter().any(|e| e.team_id == 2 && e.unit.current_str_hp + 2 <= e.unit.max_str_hp),
@@ -3273,7 +3280,7 @@ impl ClientMatchState {
         // 2. Evaluate AI Bio-Type Primal Surge
         let ai_act = self.economy.actions_remaining.get(&2).copied().unwrap_or(0);
         let ai_mun = self.economy.home_base_munitions.get(&2).copied().unwrap_or(0);
-        if ai_act >= ai_bio.primal_surge_cost.0 && ai_mun >= ai_bio.primal_surge_cost.1 {
+        if ai_act >= ai_bio.primal_surge_cost.0 && ai_mun >= u16::from(ai_bio.primal_surge_cost.1) {
             let should_surge = match ai_deck.primary_faction {
                 OrganismFaction::Plant => self.entities.iter().any(|e| e.team_id == 1 && self.entities.iter().any(|p| p.team_id == 2 && p.card.faction == OrganismFaction::Plant && p.hex.unsigned_distance_to(e.hex) <= 1)),
                 OrganismFaction::Insect => self.entities.iter().filter(|e| e.team_id == 2 && e.card.faction == OrganismFaction::Insect).count() >= 2,
@@ -3522,7 +3529,7 @@ mod tests {
         let mut session = ClientMatchState::new(roster, decks, ScenarioId::EmergenceSkirmish, 0x2072, 0);
         session.entities.clear();
 
-        let koala = session.card_def("Combat Koala").unwrap().clone();
+        let lion = session.card_def("Fireclaw Lion").unwrap().clone();
         let stealth_stalker = session.card_def("Chameleon Stalker").unwrap().clone();
         let radar_tower = session.card_def("Radar Tower").unwrap().clone();
 
@@ -3530,10 +3537,10 @@ mod tests {
             uid: 1,
             team_id: 1,
             hex: Hex::new(0, 0),
-            vox_slug: "combat_koala_squad".into(),
+            vox_slug: "mammal_fireclaw_lion".into(),
             yaw_radians: 0.0,
-            unit: make_board_unit(&koala),
-            card: koala,
+            unit: make_board_unit(&lion),
+            card: lion,
         });
         session.entities.push(LiveEntity {
             uid: 2,
@@ -3591,15 +3598,15 @@ mod tests {
             }
         }
 
-        let koala = session.card_def("Combat Koala").unwrap().clone();
+        let lion = session.card_def("Fireclaw Lion").unwrap().clone();
         session.entities.push(LiveEntity {
             uid: 1,
             team_id: 1,
             hex: Hex::new(0, 0),
-            vox_slug: "combat_koala_squad".into(),
+            vox_slug: "mammal_fireclaw_lion".into(),
             yaw_radians: 0.0,
-            unit: make_board_unit(&koala),
-            card: koala,
+            unit: make_board_unit(&lion),
+            card: lion,
         });
         let ground_vis = session.compute_visible_hexes(1);
         assert!(
@@ -3688,5 +3695,53 @@ mod tests {
         for _ in 0..6 {
             assert_eq!(host.roll_d6(), client.roll_d6());
         }
+    }
+
+    #[test]
+    fn radar_equipped_ground_unit_penetrates_mountain_los_and_stealth() {
+        let (roster, decks) = test_roster_and_decks();
+        let mut session = ClientMatchState::new(roster, decks, ScenarioId::EmergenceSkirmish, 0x2072, 0);
+        session.entities.clear();
+
+        for q in 0..=2 {
+            if let Some(t) = session.scenario.map.tiles.get_mut(&Hex::new(q, 0)) {
+                t.morphology = if q == 1 { Morphology::MountainPeak } else { Morphology::Flat };
+                t.elevation = if q == 1 { 3 } else { 0 };
+            }
+        }
+
+        let koala = session.card_def("Combat Koala").unwrap().clone();
+        assert!(!koala.can_fly && koala.radar_range >= 2);
+        let stealth_stalker = session.card_def("Chameleon Stalker").unwrap().clone();
+
+        session.entities.push(LiveEntity {
+            uid: 1,
+            team_id: 1,
+            hex: Hex::new(0, 0),
+            vox_slug: "combat_koala_squad".into(),
+            yaw_radians: 0.0,
+            unit: make_board_unit(&koala),
+            card: koala,
+        });
+        session.entities.push(LiveEntity {
+            uid: 2,
+            team_id: 2,
+            hex: Hex::new(2, 0),
+            vox_slug: "reptile_chameleon_stalker".into(),
+            yaw_radians: 0.0,
+            unit: make_board_unit(&stealth_stalker),
+            card: stealth_stalker,
+        });
+
+        let vis = session.compute_visible_hexes(1);
+        let det = session.compute_true_sight_hexes(1);
+        assert!(
+            vis.contains(&Hex::new(2, 0)),
+            "Ground unit with radar_range >= 2 must detect hex (2,0) beyond MountainPeak"
+        );
+        assert!(
+            session.is_entity_visible_to(1, 1, &vis, &det),
+            "Ground unit with radar_range >= 2 must reveal stealthed enemy at dist 2"
+        );
     }
 }

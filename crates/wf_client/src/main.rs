@@ -27,7 +27,6 @@ mod world_overlays;
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use glam::{Mat4, Vec3};
@@ -542,7 +541,9 @@ impl ApplicationHandler for WildfrontApp {
 
                 // Flush any local lockstep commands to remote TCP peer
                 for out_cmd in self.session.outbound_net_cmds.drain(..) {
-                    self.net.send(NetPacket::Command(out_cmd));
+                    if self.net.is_online() {
+                        self.net.send(NetPacket::Command(out_cmd));
+                    }
                 }
                 // Poll inbound TCP lockstep events
                 for net_ev in self.net.poll_events() {

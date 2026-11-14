@@ -966,7 +966,7 @@ pub fn export_terrain_hexes_with_config(
     for path in entries {
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("hex_tile");
         let out_p = out_stl_dir.join(format!("{stem}_{:.0}mm.stl", tile_cfg.target_hex_flat_mm));
-        export_vox_to_stl_with_config(&path, None, &out_p, &tile_cfg)?;
+        export_vox_with_config(&path, &out_p, None, &tile_cfg)?;
         count += 1;
     }
     Ok(count)

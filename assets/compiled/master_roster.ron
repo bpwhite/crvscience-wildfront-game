@@ -5325,7 +5325,7 @@
             combat_ehp_tenths: 80,
             squad_model_count: 1,
             provenance_note: "Archive Art: artifact_amphibians_09222023.jpg",
-        )
+        ),
         (
             card_key: "Orbital Kinetic Strike",
             unit_name: "Orbital Kinetic Strike",

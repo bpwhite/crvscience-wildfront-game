@@ -151,7 +151,7 @@ impl AbilityCatalog {
                 munition_cost: 1,
                 max_range: 3,
                 cooldown_turns: 0,
-                effect_summary: "Medics restore +1 STR/HP (up to max) OR purge 1 Poisoned + 1 Rooted stack on friendly unit in range.".into(),
+                effect_summary: "Medics restore +1 STR/HP (up to max) and purge all Poisoned & Rooted stacks on friendly unit in range.".into(),
             },
             AbilitySpec {
                 id: AbilityId::RadarTargetLock,
@@ -350,14 +350,11 @@ pub fn effective_movement_budget(
     mv.max(1) as u8
 }
 
-/// Executes Medic `FieldHealDetoxify` on a friendly target (`+1 STR` or purge `Poison` + `Root`).
+/// Executes Medic `FieldHealDetoxify` on a friendly target (`+1 STR` up to max and purges all `Poison` + `Root`).
 pub fn execute_field_heal(target: &mut BoardUnit) {
-    if target.poisoned_stacks > 0 || target.rooted_turns > 0 {
-        target.poisoned_stacks = target.poisoned_stacks.saturating_sub(1);
-        target.rooted_turns = 0;
-    } else {
-        target.current_str_hp = (target.current_str_hp + 1).min(target.max_str_hp);
-    }
+    target.current_str_hp = (target.current_str_hp + 1).min(target.max_str_hp);
+    target.poisoned_stacks = 0;
+    target.rooted_turns = 0;
 }
 
 /// Executes `VenomSpitCnidocytes` (`+2` stacks for Cnidarian, `+1` otherwise, capped at 3).
@@ -376,5 +373,59 @@ pub fn execute_web_snare(attacker_faction: OrganismFaction, defender: &mut Board
     defender.rooted_turns = 2;
     if attacker_faction == OrganismFaction::Arachnid && defender.current_armor == 0 && !poison_immune {
         defender.poisoned_stacks = (defender.poisoned_stacks + 1).min(3);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::{CombatClass, GraveyardFacility};
+
+    fn sample_unit(current_str: u8, max_str: u8, poison: u8, rooted: u8) -> BoardUnit {
+        BoardUnit {
+            card_key: "Test Unit".into(),
+            faction: OrganismFaction::Mammal,
+            combat_class: CombatClass::Medium,
+            graveyard_queue: GraveyardFacility::HospitalBio,
+            current_str_hp: current_str,
+            max_str_hp: max_str,
+            current_armor: 1,
+            base_armor: 1,
+            evade: 1,
+            encumbrance_cap: 3,
+            carried_munitions: 3,
+            node_leash_range: 4,
+            emits_node: false,
+            node_emit_radius: 0,
+            supply_range: 0,
+            is_laser: false,
+            laser_fired_this_turn: false,
+            confused: false,
+            poisoned_stacks: poison,
+            fortified_stacks: 0,
+            rooted_turns: rooted,
+            stunned_this_turn: false,
+            burrowed: false,
+            target_locked: false,
+            revealed_until_turn_start: false,
+            temp_move_bonus: 0,
+            temp_stealth: false,
+            blinded_this_turn: false,
+        }
+    }
+
+    #[test]
+    fn field_heal_purges_multi_stack_ailments_and_caps_str_at_max() {
+        let mut wounded = sample_unit(3, 5, 3, 2);
+        execute_field_heal(&mut wounded);
+        assert_eq!(wounded.current_str_hp, 4);
+        assert_eq!(wounded.poisoned_stacks, 0);
+        assert_eq!(wounded.rooted_turns, 0);
+
+        let mut full_hp = sample_unit(5, 5, 2, 1);
+        execute_field_heal(&mut full_hp);
+        assert_eq!(full_hp.current_str_hp, 5);
+        assert_eq!(full_hp.poisoned_stacks, 0);
+        assert_eq!(full_hp.rooted_turns, 0);
     }
 }

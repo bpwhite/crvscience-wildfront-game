@@ -6,10 +6,12 @@ license.workspace = true
 
 [dependencies]
 serde.workspace = true
-ron.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
 bytemuck.workspace = true
 bevy_ecs.workspace = true
 hexx.workspace = true
 glam.workspace = true
+
+[dev-dependencies]
+ron.workspace = true

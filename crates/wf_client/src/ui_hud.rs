@@ -241,8 +241,14 @@ pub fn draw_tactical_hud(
                     actions.toggle_deck_builder = true;
                 }
 
-                let audio_lbl = if audio.muted { "🔇" } else { "🔊" };
-                if ui.button(audio_lbl).clicked() {
+                let hw_online = audio.is_hardware_online();
+                let audio_lbl = if audio.muted || !hw_online { "🔇" } else { "🔊" };
+                let audio_tip = if hw_online {
+                    "Toggle 3D Spatial Audio"
+                } else {
+                    "No audio hardware output detected (silent fallback)"
+                };
+                if ui.button(audio_lbl).on_hover_text(audio_tip).clicked() {
                     audio.muted = !audio.muted;
                 }
 
@@ -294,7 +300,7 @@ pub fn draw_tactical_hud(
                 let fac_act_ready = session.can_local_player_act()
                     && !session.economy.faction_ability_used.get(&viewing_team).copied().unwrap_or(false)
                     && session.economy.actions_remaining.get(&viewing_team).copied().unwrap_or(0) >= fac_card.active_action_cost
-                    && session.economy.home_base_munitions.get(&viewing_team).copied().unwrap_or(0) >= fac_card.active_munition_cost;
+                    && session.economy.home_base_munitions.get(&viewing_team).copied().unwrap_or(0) >= u16::from(fac_card.active_munition_cost);
 
                 let fac_btn = egui::Button::new(
                     RichText::new(format!("🇦🇺 {} ({} Act, {} Mun)", fac_card.active_ability_name, fac_card.active_action_cost, fac_card.active_munition_cost))
@@ -315,7 +321,7 @@ Doctrine: {}
                 let bio_act_ready = session.can_local_player_act()
                     && !session.economy.primal_surge_used.get(&viewing_team).copied().unwrap_or(false)
                     && session.economy.actions_remaining.get(&viewing_team).copied().unwrap_or(0) >= bio_card.primal_surge_cost.0
-                    && session.economy.home_base_munitions.get(&viewing_team).copied().unwrap_or(0) >= bio_card.primal_surge_cost.1;
+                    && session.economy.home_base_munitions.get(&viewing_team).copied().unwrap_or(0) >= u16::from(bio_card.primal_surge_cost.1);
 
                 let bio_btn = egui::Button::new(
                     RichText::new(format!("🧬 {} ({} Act, {} Mun)", bio_card.primal_surge_name, bio_card.primal_surge_cost.0, bio_card.primal_surge_cost.1))

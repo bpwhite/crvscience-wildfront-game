@@ -296,6 +296,7 @@ impl NetLockstepManager {
     }
 
     /// Binds on an OS-assigned ephemeral loopback port (`127.0.0.1:0`) for conflict-free testing.
+    #[cfg(test)]
     pub fn start_hosting_ephemeral(&mut self) -> Result<u16, String> {
         self.disconnect();
         let listener = TcpListener::bind("127.0.0.1:0")

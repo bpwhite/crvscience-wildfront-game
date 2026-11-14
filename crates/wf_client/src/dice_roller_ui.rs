@@ -10,13 +10,12 @@
 //! - Full round tracker, phase flow control, and rolling history log.
 
 use egui::{Align2, Color32, Frame, Margin, Order, RichText, ScrollArea, Stroke, Ui, Window};
-use wf_core::combat::{required_ranged_hit_roll, resolve_attack, CombatContext, CombatOutcome};
+use wf_core::combat::CombatOutcome;
 use wf_core::mapgen::SplitMix64;
-use wf_core::OrganismFaction;
 use crate::audio::{SfxCue, SpatialAudioEngine};
 use crate::game_session::ClientMatchState;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RollPhase {
     Idle,
     Rolling { elapsed: f32, duration: f32 },
@@ -131,15 +130,6 @@ impl DiceRollerStudio {
                 self.display_dmg_pip = final_dmg;
 
                 // Resolve using exact wf_core rules
-                let ctx = CombatContext {
-                    hex_distance: self.manual_dist,
-                    is_melee: self.manual_is_melee,
-                    attacker_can_fly: false,
-                    attacker_stealth_ambush: false,
-                    attacker_adjacent_commander: false,
-                    attacker_pack_tactics_bonus: false,
-                    defender_in_rough_cover: self.manual_in_cover,
-                };
                 let req_hit = if self.manual_is_melee {
                     1
                 } else {
@@ -194,7 +184,7 @@ impl DiceRollerStudio {
                 });
 
                 if hit_succeeded {
-                    audio.play_ui(SfxCue::BallisticImpact);
+                    audio.play_ui(SfxCue::BallisticVolley);
                 } else {
                     audio.play_ui(SfxCue::UiCardTurn);
                 }
@@ -521,7 +511,7 @@ impl DiceRollerStudio {
                                 for h in self.history.iter().rev() {
                                     ui.label(
                                         RichText::new(format!(
-                                            "R#{}: {} vs {} -> Hit D6={}/{} ({}) | Dmg D6={} -> {} Raw - {} Arm = -{} STR{}",
+                                            "R#{}: {} vs {} -> Hit D6={}/{} ({}) | Dmg D6={} (Cap {}, ΔSTR {:+}) -> {} Raw - {} Arm = -{} STR{}",
                                             h.round_num,
                                             h.attacker_name,
                                             h.defender_name,
@@ -529,6 +519,8 @@ impl DiceRollerStudio {
                                             h.hit_target,
                                             if h.hit_succeeded { "HIT" } else { "MISS" },
                                             h.dmg_d6,
+                                            h.capped_dmg,
+                                            h.delta_str,
                                             h.raw_strike,
                                             h.armor_absorbed,
                                             h.str_damage,

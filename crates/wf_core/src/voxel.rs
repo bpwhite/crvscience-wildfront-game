@@ -10,10 +10,74 @@ use std::collections::BTreeMap;
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
+fn deserialize_voxels_z_yx<'de, D>(deserializer: D) -> Result<[[u8; 16]; 4], D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Row16([u8; 16]);
+    impl<'de> serde::Deserialize<'de> for Row16 {
+        fn deserialize<D2>(d: D2) -> Result<Self, D2::Error>
+        where
+            D2: serde::Deserializer<'de>,
+        {
+            struct RowVisitor;
+            impl<'de> serde::de::Visitor<'de> for RowVisitor {
+                type Value = [u8; 16];
+                fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.write_str("a sequence or tuple of 16 u8 voxel indices")
+                }
+                fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+                where
+                    A: serde::de::SeqAccess<'de>,
+                {
+                    let mut out = [0u8; 16];
+                    for (i, slot) in out.iter_mut().enumerate() {
+                        *slot = seq
+                            .next_element()?
+                            .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
+                    }
+                    if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                        return Err(serde::de::Error::invalid_length(17, &self));
+                    }
+                    Ok(out)
+                }
+            }
+            d.deserialize_any(RowVisitor).map(Row16)
+        }
+    }
+
+    struct OuterVisitor;
+    impl<'de> serde::de::Visitor<'de> for OuterVisitor {
+        type Value = [[u8; 16]; 4];
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a sequence or tuple of 4 brick Z-layers")
+        }
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut out = [[0u8; 16]; 4];
+            for (i, slot) in out.iter_mut().enumerate() {
+                let row: Row16 = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
+                *slot = row.0;
+            }
+            if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                return Err(serde::de::Error::invalid_length(5, &self));
+            }
+            Ok(out)
+        }
+    }
+
+    deserializer.deserialize_any(OuterVisitor)
+}
+
 /// One sparse `4x4x4` brick in MagicaVoxel Z-up coordinates `(bx, by, bz)`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SparseBrick4 {
     pub brick_pos: (u8, u8, u8),
+    #[serde(deserialize_with = "deserialize_voxels_z_yx")]
     pub voxels_z_yx: [[u8; 16]; 4],
 }
 
@@ -311,5 +375,35 @@ mod tests {
         assert_eq!(gpu.bricks.len(), 1);
         // Bit index inside Y-up brick: lx=1, ly=2, lz=3 -> 1 + 8 + 48 = 57 (in mask_hi bit 25)
         assert_eq!(gpu.bricks[0].mask_hi, 1u32 << (57 - 32));
+    }
+
+    #[test]
+    fn deserializes_sparse_brick4_from_both_list_and_tuple_ron_syntax() {
+        let mixed_list_tuple = r#"(
+            brick_pos: (1, 2, 3),
+            voxels_z_yx: (
+                [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255],
+            ),
+        )"#;
+        let parsed_a: SparseBrick4 = ron::from_str(mixed_list_tuple).expect("list-in-tuple RON must parse");
+        assert_eq!(parsed_a.brick_pos, (1, 2, 3));
+        assert_eq!(parsed_a.voxels_z_yx[0][15], 15);
+        assert_eq!(parsed_a.voxels_z_yx[3][15], 255);
+
+        let tuple_in_tuple = r#"(
+            brick_pos: (0, 0, 0),
+            voxels_z_yx: (
+                (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15),
+                (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+                (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+                (16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 42),
+            ),
+        )"#;
+        let parsed_b: SparseBrick4 = ron::from_str(tuple_in_tuple).expect("tuple-in-tuple RON must parse");
+        assert_eq!(parsed_b.voxels_z_yx[0][5], 5);
+        assert_eq!(parsed_b.voxels_z_yx[3][15], 42);
     }
 }

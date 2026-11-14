@@ -14,8 +14,8 @@ use std::path::Path;
 use egui::{Align2, Color32, Frame, Margin, ProgressBar, RichText, ScrollArea, Stroke, Ui, Vec2};
 use ron::ser::{to_string_pretty, PrettyConfig};
 use wf_core::{
-    BioTypeCardDef, CombatClass, DeckEntry, DeckList, DeckValidationReport,
-    FactionCardDef, GraveyardFacility, OrganismFaction, OriginAllegiance, RosterManifest,
+    CombatClass, DeckEntry, DeckList, FactionCardDef, GraveyardFacility, OrganismFaction,
+    OriginAllegiance, RosterManifest, UnitCardDef,
 };
 use wf_assets::stl_exporter::{export_card_to_stl, export_deck_to_stl_folder, sanitize_filename_slug, TabletopPrintConfig};
 use crate::audio::{SfxCue, SpatialAudioEngine};
@@ -380,6 +380,7 @@ impl DeckBuilderScreen {
         Self::assemble_greedy_preset(
             roster,
             "Fish + Amphibian 250-Pt Pelagic Deck",
+            OriginAllegiance::NorthAmerica,
             OrganismFaction::Fish,
             OrganismFaction::Amphibian,
             "Command Center (North America)",
@@ -403,6 +404,7 @@ impl DeckBuilderScreen {
         Self::assemble_greedy_preset(
             roster,
             "Bird + Arachnid 250-Pt Aerial-Web Deck",
+            OriginAllegiance::SouthAmerica,
             OrganismFaction::Bird,
             OrganismFaction::Arachnid,
             "Command Center (South America)",
@@ -420,6 +422,28 @@ impl DeckBuilderScreen {
                 "Avian Aerie Splice",
             ],
         )
+    }
+
+    pub fn build_preset_pure_plant(roster: &RosterManifest) -> DeckList {
+        let mut deck = wf_sim::build_tournament_deck(
+            roster,
+            OriginAllegiance::Australia,
+            OrganismFaction::Plant,
+            OrganismFaction::Plant,
+        );
+        deck.deck_name = "Pure Plant Dominion (Australia)".into();
+        deck
+    }
+
+    pub fn build_preset_pure_insect(roster: &RosterManifest) -> DeckList {
+        let mut deck = wf_sim::build_tournament_deck(
+            roster,
+            OriginAllegiance::Asia,
+            OrganismFaction::Insect,
+            OrganismFaction::Insect,
+        );
+        deck.deck_name = "Pure Insect Swarm (Asia)".into();
+        deck
     }
 
     /// Automatically constructs an optimal, tournament-legal 250-point deck
@@ -521,7 +545,6 @@ impl DeckBuilderScreen {
 
         // 4. Greedily fill deck with high-synergy unit cards
         for card in eligible {
-            let cap = Self::max_copies_for_class(card.combat_class);
             if current_pts + card.deck_points <= 250 {
                 entries.push(DeckEntry {
                     card_key: card.card_key.clone(),
@@ -552,8 +575,11 @@ impl DeckBuilderScreen {
             }
         }
 
+        let faction = self.working_deck.faction;
         self.working_deck = DeckList {
             deck_name: format!("{:?} + {:?} 250-Pt Synergy Deck", f1, f2),
+            faction,
+            is_pure_biotype: is_pure,
             primary_faction: f1,
             secondary_faction: f2,
             point_budget: 250,
@@ -569,6 +595,7 @@ impl DeckBuilderScreen {
     fn assemble_greedy_preset(
         roster: &RosterManifest,
         name: &str,
+        faction: OriginAllegiance,
         f1: OrganismFaction,
         f2: OrganismFaction,
         hq_key: &str,
@@ -600,8 +627,19 @@ impl DeckBuilderScreen {
                 }
             }
         }
+        for entry in &mut entries {
+            if let Some(card) = lookup.get(entry.card_key.as_str()) {
+                let cap = Self::max_copies_for_class(card.combat_class);
+                while entry.quantity < cap && pts + card.deck_points <= 250 {
+                    entry.quantity += 1;
+                    pts += card.deck_points;
+                }
+            }
+        }
         DeckList {
             deck_name: name.into(),
+            faction,
+            is_pure_biotype: f1 == f2,
             primary_faction: f1,
             secondary_faction: f2,
             point_budget: 250,
@@ -1384,5 +1422,38 @@ impl DeckBuilderScreen {
             });
 
         launched_deck
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn load_roster() -> RosterManifest {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let raw = fs::read_to_string(root.join("assets/compiled/master_roster.ron"))
+            .expect("Missing master_roster.ron");
+        ron::from_str(&raw).expect("Invalid master_roster.ron")
+    }
+
+    #[test]
+    fn all_preset_and_auto_generated_decks_validate_legally() {
+        let roster = load_roster();
+        for (label, deck) in [
+            ("Fish+Amphibian", DeckBuilderScreen::build_preset_fish_amphibian(&roster)),
+            ("Bird+Arachnid", DeckBuilderScreen::build_preset_bird_arachnid(&roster)),
+            ("Pure Plant", DeckBuilderScreen::build_preset_pure_plant(&roster)),
+            ("Pure Insect", DeckBuilderScreen::build_preset_pure_insect(&roster)),
+        ] {
+            let rep = deck.validate_against(&roster);
+            assert!(rep.is_legal, "{label} failed deck validation: {:?}", rep.violations);
+        }
+
+        let initial = DeckBuilderScreen::build_preset_pure_plant(&roster);
+        let mut screen = DeckBuilderScreen::new(initial);
+        screen.auto_generate_faction_synergy_deck(&roster);
+        let auto_rep = screen.working_deck.validate_against(&roster);
+        assert!(auto_rep.is_legal, "Auto-generated synergy deck failed validation: {:?}", auto_rep.violations);
     }
 }

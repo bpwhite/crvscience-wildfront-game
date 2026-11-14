@@ -77,7 +77,6 @@ pub struct UnitKineticAnim {
 /// Volumetric 3D tumbling D6 physically simulated in world space.
 #[derive(Debug, Clone)]
 pub struct TumblingDie3D {
-    pub label: String,
     pub pos: Vec3,
     pub vel: Vec3,
     pub ground_y: f32,
@@ -217,7 +216,6 @@ impl VfxManager {
         hit_succeeded: bool,
     ) {
         let dir = (to_pos - from_pos).normalize_or_zero();
-        let mid = (from_pos + to_pos) * 0.5;
         let ground_y = to_pos.y;
         let right = Vec3::new(-dir.z, 0.0, dir.x).normalize_or_zero();
 
@@ -227,7 +225,6 @@ impl VfxManager {
         let hit_dir = (hit_target - hit_origin).normalize_or_zero();
         let hit_dist = hit_origin.distance(hit_target);
         self.tumbling_dice.push(TumblingDie3D {
-            label: format!("Hit D6 [{}]", hit_d6),
             pos: hit_origin,
             vel: hit_dir * (hit_dist * 1.55) + Vec3::new(0.0, 4.4, 0.0),
             ground_y,
@@ -248,7 +245,6 @@ impl VfxManager {
         let dmg_dir = (dmg_target - dmg_origin).normalize_or_zero();
         let dmg_dist = dmg_origin.distance(dmg_target);
         self.tumbling_dice.push(TumblingDie3D {
-            label: format!("Dmg D6 [{}]", dmg_d6),
             pos: dmg_origin,
             vel: dmg_dir * (dmg_dist * 1.62) + Vec3::new(0.0, 4.8, 0.0),
             ground_y,

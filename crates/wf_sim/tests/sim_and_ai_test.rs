@@ -114,3 +114,37 @@ fn sim_test_03_pure_fish_aquatic_siege_completes_decisively() {
     );
     assert!(m.winner_team.is_some(), "Grandmaster Pure Fish vs Pure Bird must reach decisive finish");
 }
+
+#[test]
+fn sim_test_04_tampered_replay_hash_rejected() {
+    let roster = load_workspace_roster();
+    let d1 = build_tournament_deck(
+        &roster,
+        OriginAllegiance::Asia,
+        OrganismFaction::Plant,
+        OrganismFaction::Cnidarian,
+    );
+    let d2 = build_tournament_deck(
+        &roster,
+        OriginAllegiance::NorthAmerica,
+        OrganismFaction::Reptile,
+        OrganismFaction::Amphibian,
+    );
+    let finished = play_headless_match_to_end(
+        &roster,
+        d1,
+        d2,
+        ScenarioId::KingOfTheControlSpire,
+        0xCAFE_2072,
+        AiDifficulty::Veteran,
+        45,
+        true,
+    );
+    let mut tampered = finished.export_replay();
+    assert!(!tampered.steps.is_empty());
+    tampered.steps[0].post_state_hash ^= 1;
+    assert!(
+        HeadlessMatch::verify_replay_data(roster, &tampered).is_err(),
+        "Tampered post_state_hash must fail replay verification"
+    );
+}

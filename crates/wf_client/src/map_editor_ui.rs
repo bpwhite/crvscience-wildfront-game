@@ -200,7 +200,7 @@ impl MapEditorStudio {
 
         Window::new("🗺 HEX MAP & SCENARIO STUDIO — LIVE 3D TERRAIN SCULPTOR (F3)")
             .open(&mut open_flag)
-            .anchor(Align2::TOP_RIGHT, [-14.0, 54.0])
+            .anchor(Align2::RIGHT_TOP, [-14.0, 54.0])
             .collapsible(true)
             .resizable(false)
             .order(Order::Foreground)
