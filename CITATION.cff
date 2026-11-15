@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 title: "crvscience-wildfront-game"
-message: "If you use Wildfront or its validation telemetry in academic work, please cite both this software repository and its companion CRV Science Apps Preprint."
+message: "If you use WildFront BattleGrounds or its validation telemetry in academic work, please cite both this software repository and its companion CRV Science Apps Preprint."
 type: software
 authors:
   - family-names: "White"
@@ -15,7 +15,7 @@ license:
   - Apache-2.0
 preferred-citation:
   type: article
-  title: "Wildfront: Turn-Based Hex Strategy Game with Voxel Graphics and Procedural Map Generation"
+  title: "WildFront BattleGrounds: Turn-Based Hex Strategy Game with Voxel Graphics and Procedural Map Generation"
   authors:
     - family-names: "White"
       given-names: "Bryan P."
