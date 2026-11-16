@@ -1,3 +1,18 @@
+// Copyright (C) 2026 CRV Science Network (https://crvscience.com)
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://gnu.org>.
+
 //! Native `winit 0.30.13` + `wgpu 30.0` + `egui 0.37.0` *Wildfront Battlegrounds* client.
 //!
 //! Features:
@@ -244,7 +259,7 @@ impl ApplicationHandler for WildfrontApp {
         );
 
         self.last_frame_instant = Instant::now();
-        engine.window.request_redraw();
+        if let Some(w) = engine.window.as_ref() { w.request_redraw(); }
         self.egui_state = Some(egui_state);
         self.engine = Some(engine);
     }
@@ -258,7 +273,7 @@ impl ApplicationHandler for WildfrontApp {
             || self.session.entities.iter().any(|e| e.card.can_fly || matches!(e.vox_slug.as_str(), "fish_laser_shark" | "cnidarian_manowar"))
         {
             if let Some(eng) = self.engine.as_ref() {
-                eng.window.request_redraw();
+                if let Some(w) = eng.window.as_ref() { w.request_redraw(); }
             }
         }
     }
@@ -266,12 +281,14 @@ impl ApplicationHandler for WildfrontApp {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         // Forward input to egui first so HUD buttons/cards consume clicks cleanly
         if let (Some(egui_state), Some(eng)) = (self.egui_state.as_mut(), self.engine.as_ref()) {
-            let resp = egui_state.on_window_event(&eng.window, &event);
-            if resp.repaint {
-                eng.window.request_redraw();
-            }
-            if resp.consumed && !matches!(event, WindowEvent::RedrawRequested | WindowEvent::Resized(_)) {
-                return;
+            if let Some(window) = eng.window.as_ref() {
+                let resp = egui_state.on_window_event(window, &event);
+                if resp.repaint {
+                    window.request_redraw();
+                }
+                if resp.consumed && !matches!(event, WindowEvent::RedrawRequested | WindowEvent::Resized(_)) {
+                    return;
+                }
             }
         }
 
@@ -280,7 +297,7 @@ impl ApplicationHandler for WildfrontApp {
             WindowEvent::Resized(sz) => {
                 if let Some(eng) = self.engine.as_mut() {
                     eng.resize(sz.width, sz.height);
-                    eng.window.request_redraw();
+                    if let Some(w) = eng.window.as_ref() { w.request_redraw(); }
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => match button {
@@ -318,7 +335,7 @@ impl ApplicationHandler for WildfrontApp {
                         }
                     }
                     if let Some(eng) = self.engine.as_ref() {
-                        eng.window.request_redraw();
+                        if let Some(w) = eng.window.as_ref() { w.request_redraw(); }
                     }
                 }
                 _ => {}
@@ -337,7 +354,7 @@ impl ApplicationHandler for WildfrontApp {
                 }
                 self.update_hover_ray();
                 if let Some(eng) = self.engine.as_ref() {
-                    eng.window.request_redraw();
+                    if let Some(w) = eng.window.as_ref() { w.request_redraw(); }
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -348,7 +365,7 @@ impl ApplicationHandler for WildfrontApp {
                 self.camera.distance = (self.camera.distance * (1.0 - scroll * 0.10)).clamp(3.2, 68.0);
                 self.update_hover_ray();
                 if let Some(eng) = self.engine.as_ref() {
-                    eng.window.request_redraw();
+                    if let Some(w) = eng.window.as_ref() { w.request_redraw(); }
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -524,7 +541,7 @@ impl ApplicationHandler for WildfrontApp {
                     _ => {}
                 }
                 if let Some(eng) = self.engine.as_ref() {
-                    eng.window.request_redraw();
+                    if let Some(w) = eng.window.as_ref() { w.request_redraw(); }
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -615,7 +632,8 @@ impl ApplicationHandler for WildfrontApp {
                 let mut textures_delta = egui::TexturesDelta::default();
 
                 if let (Some(egui_state), Some(eng)) = (self.egui_state.as_mut(), self.engine.as_ref()) {
-                    let raw_input = egui_state.take_egui_input(&eng.window);
+                    let window = eng.window.as_ref().expect("windowed mode");
+                    let raw_input = egui_state.take_egui_input(window);
                     let show_ov = self.camera.show_overlays;
                     let show_badges = self.camera.show_unit_badges && !self.deck_builder.is_open && !self.main_menu.is_open && !self.session.hotseat_handoff_pending;
                     let vp_mat = self.camera.view_proj_matrix(eng.config.width, eng.config.height);
@@ -699,7 +717,8 @@ impl ApplicationHandler for WildfrontApp {
                             launched_custom_deck = Some(new_deck);
                         }
                     });
-                    egui_state.handle_platform_output(&eng.window, full_output.platform_output);
+                    let window = eng.window.as_ref().expect("windowed mode");
+                    egui_state.handle_platform_output(window, full_output.platform_output);
                     paint_jobs = self
                         .egui_ctx
                         .tessellate(full_output.shapes, full_output.pixels_per_point);
@@ -890,10 +909,12 @@ impl ApplicationHandler for WildfrontApp {
                     let (ht, inst, pb) = build_live_gpu_scene(&self.session, &self.vfx, &self.handles, self.camera.show_terrain_props);
                     self.pick_boxes = pb;
                     if let Some(eng) = self.engine.as_ref() {
-                        eng.window.set_title(&format!(
-                            "Wildfront Battlegrounds — {} [Seed 0x{:08X}]",
-                            self.session.scenario.title, self.active_seed
-                        ));
+                        if let Some(window) = eng.window.as_ref() {
+                            window.set_title(&format!(
+                                "Wildfront Battlegrounds — {} [Seed 0x{:08X}]",
+                                self.session.scenario.title, self.active_seed
+                            ));
+                        }
                     }
                     (ht, inst)
                 } else {
@@ -979,6 +1000,442 @@ fn load_roster_and_decks() -> (RosterManifest, [DeckList; 2]) {
     (roster, [d0, d1])
 }
 
+fn write_rgba_png(
+    path: &std::path::Path,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> std::io::Result<()> {
+    let row_bytes = width as usize * 4;
+    if rgba.len() != row_bytes * height as usize {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Unexpected RGBA buffer length {}", rgba.len()),
+        ));
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let mut raw = Vec::with_capacity((row_bytes + 1) * height as usize);
+    for row in rgba.chunks_exact(row_bytes) {
+        raw.push(0);
+        raw.extend_from_slice(row);
+    }
+    let (mut s1, mut s2) = (1u32, 0u32);
+    for &b in &raw {
+        s1 = (s1 + b as u32) % 65521;
+        s2 = (s2 + s1) % 65521;
+    }
+    let mut zlib = Vec::with_capacity(raw.len() + (raw.len() / 65535 + 1) * 5 + 6);
+    zlib.extend_from_slice(&[0x78, 0x01]);
+    let n_chunks = raw.len().div_ceil(65535).max(1);
+    for (idx, chunk) in raw.chunks(65535).enumerate() {
+        zlib.push(if idx + 1 == n_chunks { 0x01 } else { 0x00 });
+        let len = chunk.len() as u16;
+        zlib.extend_from_slice(&len.to_le_bytes());
+        zlib.extend_from_slice(&(!len).to_le_bytes());
+        zlib.extend_from_slice(chunk);
+    }
+    zlib.extend_from_slice(&((s2 << 16) | s1).to_be_bytes());
+
+    let push_chunk = |out: &mut Vec<u8>, tag: &[u8; 4], data: &[u8]| {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        out.extend_from_slice(tag);
+        out.extend_from_slice(data);
+        let mut crc = 0xFFFF_FFFFu32;
+        for &b in tag.iter().chain(data.iter()) {
+            crc ^= b as u32;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            }
+        }
+        out.extend_from_slice(&(crc ^ 0xFFFF_FFFF).to_be_bytes());
+    };
+    let mut png = Vec::with_capacity(zlib.len() + 64);
+    png.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
+    let mut ihdr = [0u8; 13];
+    ihdr[0..4].copy_from_slice(&width.to_be_bytes());
+    ihdr[4..8].copy_from_slice(&height.to_be_bytes());
+    ihdr[8] = 8;
+    ihdr[9] = 6;
+    push_chunk(&mut png, b"IHDR", &ihdr);
+    push_chunk(&mut png, b"IDAT", &zlib);
+    push_chunk(&mut png, b"IEND", &[]);
+    std::fs::write(path, png)
+}
+
+fn render_headless_screenshot(app: &mut WildfrontApp, out_path: &std::path::Path, view: u8) {
+    let width: u32 = 1600;
+    let height: u32 = 1000;
+
+    if view == 2 {
+        app.main_menu.has_started_match = true;
+        app.main_menu.is_open = false;
+        app.deck_builder.is_open = true;
+        app.map_editor.is_open = false;
+        app.codex.is_open = false;
+        app.session.fog_enabled = false;
+        app.session.update_explored_fog();
+    } else if view == 3 {
+        app.session
+            .load_scenario(ScenarioId::BunkerBreakout, app.active_seed);
+        app.main_menu.has_started_match = true;
+        app.main_menu.is_open = false;
+        app.deck_builder.is_open = false;
+        app.map_editor.is_open = true;
+        app.map_editor.brush_paint_enabled = true;
+        app.map_editor.symmetry_brush = crate::map_editor_ui::SymmetryBrush::Rotational180;
+        app.map_editor.selected_biome = wf_core::Biome::RuinedBunkerCaldera;
+        app.map_editor.selected_morphology = wf_core::Morphology::BunkerRuins;
+        app.map_editor.selected_elevation = 2;
+        for target_hex in [Hex::new(0, 1), Hex::new(1, -1)] {
+            if !app.session.entities.iter().any(|e| e.hex == target_hex) {
+                app.map_editor.paint_hex(&mut app.session, target_hex);
+            }
+        }
+        app.map_editor.selected_morphology = wf_core::Morphology::ShallowFord;
+        app.map_editor.selected_elevation = 0;
+        if !app.session.entities.iter().any(|e| e.hex == Hex::new(0, 0)) {
+            app.map_editor.paint_hex(&mut app.session, Hex::new(0, 0));
+        }
+        // Leave brush selector set to BunkerRuins @ Elev 2 for Map Studio clarity
+        app.map_editor.selected_morphology = wf_core::Morphology::BunkerRuins;
+        app.map_editor.selected_elevation = 2;
+
+        app.session.fog_enabled = false;
+        app.session.update_explored_fog();
+        app.camera.show_unit_badges = false;
+        if let Some(unit) = app
+            .session
+            .entities
+            .iter()
+            .find(|e| e.team_id == 1 && !e.card.combat_class.is_building())
+            .or_else(|| app.session.entities.iter().find(|e| e.team_id == 1))
+        {
+            app.session.selected_hex = Some(unit.hex);
+        }
+        app.camera.yaw = 0.56;
+        app.camera.pitch = 0.64;
+        app.camera.distance = 43.0;
+        app.camera.target = Vec3::new(3.0, -0.3, -1.8);
+    } else {
+        app.main_menu.has_started_match = true;
+        app.main_menu.is_open = false;
+        app.deck_builder.is_open = false;
+        app.map_editor.is_open = false;
+        app.session.fog_enabled = false;
+        app.session.update_explored_fog();
+
+        // Deploy 2 distinct Team 1 units from hand onto forward hexes toward the center arena,
+        // then run 1 AI opening turn so opposing Team 1 / Team 2 3D voxel units showcase on the sunlit board.
+        for _ in 0..2 {
+            let p1_mun = app
+                .session
+                .economy
+                .home_base_munitions
+                .get(&1)
+                .copied()
+                .unwrap_or(0);
+            let p1_act = app
+                .session
+                .economy
+                .actions_remaining
+                .get(&1)
+                .copied()
+                .unwrap_or(0);
+            if p1_act == 0 {
+                break;
+            }
+            let mut chosen: Option<(usize, hexx::Hex)> = None;
+            for (idx, card_key) in app.session.hand.iter().enumerate() {
+                let Some(card) = app.session.card_def(card_key).cloned() else {
+                    continue;
+                };
+                if card.combat_class == wf_core::CombatClass::TacticalDeployment
+                    || card.combat_class == wf_core::CombatClass::Artifact
+                    || card.combat_class.is_building()
+                {
+                    continue;
+                }
+                if u16::from(card.encumbrance) > p1_mun {
+                    continue;
+                }
+                let valid = app.session.valid_deploy_hexes_for_team(1, card_key);
+                if let Some(best_hex) = valid
+                    .into_iter()
+                    .min_by_key(|h| h.unsigned_distance_to(hexx::Hex::ZERO))
+                {
+                    chosen = Some((idx, best_hex));
+                    break;
+                }
+            }
+            if let Some((hand_idx, dst_hex)) = chosen {
+                app.session.mode = crate::game_session::CommandMode::DeployHandCard(hand_idx);
+                app.session
+                    .handle_hex_click(dst_hex, &mut app.vfx, &mut app.audio);
+            } else {
+                break;
+            }
+        }
+        app.session.end_active_turn(&mut app.vfx, &mut app.audio);
+        app.session.fog_enabled = false;
+        app.vfx.tick(0.35);
+
+        if let Some(vanguard) = app
+            .session
+            .entities
+            .iter()
+            .filter(|e| e.team_id == 1 && e.unit.current_str_hp > 0 && !e.card.combat_class.is_building())
+            .min_by_key(|e| e.hex.unsigned_distance_to(hexx::Hex::ZERO))
+        {
+            app.session.selected_hex = Some(vanguard.hex);
+        } else if let Some(first_p1) = app.session.entities.iter().find(|e| e.team_id == 1) {
+            app.session.selected_hex = Some(first_p1.hex);
+        }
+
+        // Center the arena inside the open viewport to the right of the 305px inspector sidebar
+        // and above the bottom hand tray so both teams, bridges, and the center canyon frame cleanly.
+        app.camera.yaw = 0.56;
+        app.camera.pitch = 0.66;
+        app.camera.distance = 39.5;
+        app.camera.target = Vec3::new(-4.2, -0.4, 3.2);
+    }
+
+    let (hex_tiles, instances, pick_boxes) = build_live_gpu_scene(
+        &app.session,
+        &app.vfx,
+        &app.handles,
+        app.camera.show_terrain_props,
+    );
+    app.pick_boxes = pick_boxes;
+
+    let mut engine = pollster::block_on(VoxelRenderEngine::new_offscreen(
+        width,
+        height,
+        &app.vox_gpu,
+        &hex_tiles,
+        &instances,
+    ));
+
+    let target_tex = engine.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("wildfront-offscreen-target"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let bytes_per_row = width * 4;
+    let staging = engine.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("wildfront-offscreen-staging"),
+        size: (bytes_per_row * height) as u64,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let mut fonts = egui::FontDefinitions::default();
+    if fonts.font_data.is_empty() {
+        let sans_bytes = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")
+            .or_else(|_| std::fs::read(r"C:\Windows\Fonts\arial.ttf"));
+        if let Ok(bytes) = sans_bytes {
+            fonts.font_data.insert(
+                "ui-sans".to_owned(),
+                std::sync::Arc::new(egui::FontData::from_owned(bytes)),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .push("ui-sans".to_owned());
+        }
+        if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\consola.ttf") {
+            fonts.font_data.insert(
+                "ui-mono".to_owned(),
+                std::sync::Arc::new(egui::FontData::from_owned(bytes)),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("ui-mono".to_owned());
+        }
+        if fonts.font_data.contains_key("ui-sans") {
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("ui-sans".to_owned());
+        }
+        if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\seguisym.ttf") {
+            fonts.font_data.insert(
+                "ui-sym".to_owned(),
+                std::sync::Arc::new(egui::FontData::from_owned(bytes)),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .push("ui-sym".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("ui-sym".to_owned());
+        }
+        app.egui_ctx.set_fonts(fonts);
+    }
+
+    app.egui_ctx.set_pixels_per_point(1.0);
+
+    for frame_idx in 0..4u32 {
+        let raw_input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width as f32, height as f32),
+            )),
+            viewports: std::iter::once((
+                egui::ViewportId::ROOT,
+                egui::ViewportInfo {
+                    native_pixels_per_point: Some(1.0),
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+            time: Some(frame_idx as f64 / 60.0),
+            predicted_dt: 1.0 / 60.0,
+            ..Default::default()
+        };
+        let show_ov = app.camera.show_overlays;
+        let show_badges = app.camera.show_unit_badges
+            && !app.deck_builder.is_open
+            && !app.main_menu.is_open
+            && !app.session.hotseat_handoff_pending;
+        let vp_mat = app.camera.view_proj_matrix(width, height);
+        let cam_dist = app.camera.distance;
+
+        let full_output = app.egui_ctx.run_ui(raw_input, |root_ui| {
+            if !app.main_menu.is_open && !app.deck_builder.is_open {
+                let _ = draw_tactical_hud(
+                    root_ui,
+                    &mut app.session,
+                    &mut app.vfx,
+                    &mut app.audio,
+                    show_ov,
+                    app.camera.show_unit_badges,
+                    app.camera.show_terrain_props,
+                );
+            }
+            let viewport_rect = root_ui.available_rect_before_wrap();
+            draw_world_space_overlays(
+                root_ui,
+                viewport_rect,
+                vp_mat,
+                cam_dist,
+                &app.session,
+                &app.vfx,
+                &app.pick_boxes,
+                show_badges,
+            );
+            let _ = app.map_editor.show(root_ui, &mut app.session, &mut app.audio);
+            let _ = app.deck_builder.show(
+                root_ui,
+                &app.session.roster,
+                &app.starter_presets,
+                &mut app.audio,
+            );
+        });
+        let paint_jobs = app
+            .egui_ctx
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
+        let (beams, beam_cnt, debris, debris_cnt) = app.vfx.pack_gpu_buffers();
+        engine.upload_live_scene_and_vfx(
+            &hex_tiles,
+            &instances,
+            &beams,
+            beam_cnt,
+            &debris,
+            debris_cnt,
+        );
+        let uniforms = app.camera.build_uniforms(
+            width,
+            height,
+            engine.instance_count,
+            app.vfx.clock_seconds,
+            app.session.turn_number,
+        );
+        engine.render_offscreen_frame(
+            uniforms,
+            &paint_jobs,
+            &full_output.textures_delta,
+            &target_tex,
+            &target_view,
+            if frame_idx == 3 { Some(&staging) } else { None },
+        );
+    }
+
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |res| {
+        let _ = tx.send(res);
+    });
+    let _ = engine.device.poll(wgpu::PollType::wait_indefinitely());
+    rx.recv()
+        .expect("GPU readback channel closed")
+        .expect("GPU staging buffer map failed");
+    let mapped = slice
+        .get_mapped_range()
+        .expect("Failed to map staging buffer range");
+    write_rgba_png(out_path, width, height, &mapped)
+        .expect("Failed to write offscreen screenshot PNG");
+    drop(mapped);
+    staging.unmap();
+}
+
+fn parse_screenshot_args() -> (Option<std::path::PathBuf>, u8) {
+    let mut out_path: Option<std::path::PathBuf> = None;
+    let mut view: u8 = 1;
+    let mut args = std::env::args_os().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--screenshot" {
+            let val = args
+                .next()
+                .expect("--screenshot requires an output file path argument");
+            out_path = Some(std::path::PathBuf::from(val));
+            continue;
+        }
+        if arg == "--screenshot-view" {
+            let val = args
+                .next()
+                .expect("--screenshot-view requires a numeric view index (1..=3)");
+            if let Some(s) = val.to_str() {
+                if let Ok(v) = s.trim().parse::<u8>() {
+                    view = v;
+                }
+            }
+            continue;
+        }
+        if let Some(s) = arg.to_str() {
+            if let Some(rest) = s.strip_prefix("--screenshot=") {
+                out_path = Some(std::path::PathBuf::from(rest));
+            } else if let Some(rest) = s.strip_prefix("--screenshot-view=") {
+                if let Ok(v) = rest.trim().parse::<u8>() {
+                    view = v;
+                }
+            }
+        }
+    }
+    (out_path, view)
+}
+
 fn main() {
     println!("=================================================================");
     println!("  WILDRONT BATTLEGROUNDS — PLAYABLE VOXEL & EGUI CLIENT (v3.4.1 — Tile-Culled 64-Tree Raymarcher, 2-Ply AI, F3 Map Studio & F4 Replay Theater)     ");
@@ -1002,7 +1459,7 @@ fn main() {
     let initial_builder_deck = decks[0].clone();
     let session = ClientMatchState::new(roster, decks, ScenarioId::EmergenceSkirmish, seed, 0);
 
-    let event_loop = EventLoop::new().expect("Failed to initialize winit EventLoop");
+    let (screenshot_out, screenshot_view) = parse_screenshot_args();
     let mut app = WildfrontApp {
         vox_gpu,
         handles,
@@ -1027,5 +1484,11 @@ fn main() {
         engine: None,
         last_frame_instant: Instant::now(),
     };
+    if let Some(out_path) = screenshot_out {
+        render_headless_screenshot(&mut app, &out_path, screenshot_view);
+        return;
+    }
+
+    let event_loop = EventLoop::new().expect("Failed to initialize winit EventLoop");
     event_loop.run_app(&mut app).expect("EventLoop terminated with error");
 }

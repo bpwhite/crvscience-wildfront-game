@@ -1,4 +1,6 @@
-# Wildfront Battlegrounds — Complete Native Rust Voxel, Hex, Deck-Builder & Spatial Audio Engine (v5)
+# WildFront BattleGrounds — Complete Native Rust Voxel, Hex, Deck-Builder & Spatial Audio Engine (v5)
+
+![WildFront BattleGrounds Headless Workbench](validation/headless_screenshot.png)
 
 > *"The year is 2072. Only six continents remain. The earth has been wracked by global warming, drought, and radiation following years of nuclear war..."*
 
@@ -19,7 +21,7 @@ cargo run -p wf_client --release
 ```
 
 
-# Wildfront Battlegrounds — 25 Custom `.vox` & Sparse 64-Tree Rig Catalog
+# WildFront BattleGrounds — 25 Custom `.vox` & Sparse 64-Tree Rig Catalog
 
 Total sculpted solid voxels: **336,891** across **22,619** sparse `4×4×4` GPU leaf bricks.
 

@@ -1,3 +1,18 @@
+// Copyright (C) 2026 CRV Science Network (https://crvscience.com)
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://gnu.org>.
+
 // Wildfront Battlegrounds — GPU Sparse 64-Tree Brickmap & Procedural Hex Terrain Raymarcher
 // Traverses:
 //   1. Multi-instance 4-level Sparse 64-Tree unit rigs (`256^3 -> 64^3 -> 16^3 -> 4^3 -> 1^3`)
@@ -822,4 +837,11 @@ fn fs_blit(in: BlitVaryings) -> @location(0) vec4<f32> {
     // Decode sRGB back to linear so an sRGB swapchain hardware-encodes once cleanly
     let lin = pow(sampled.rgb, vec3<f32>(2.2));
     return vec4<f32>(lin, 1.0);
+}
+
+@fragment
+fn fs_blit_unorm(in: BlitVaryings) -> @location(0) vec4<f32> {
+    let sampled = textureSample(blit_tex, blit_samp, in.uv);
+    // Target is already non-sRGB Rgba8Unorm; preserve cs_main's sRGB gamma encoding directly
+    return vec4<f32>(sampled.rgb, 1.0);
 }

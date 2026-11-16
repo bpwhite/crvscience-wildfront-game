@@ -1,3 +1,18 @@
+// Copyright (C) 2026 CRV Science Network (https://crvscience.com)
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://gnu.org>.
+
 //! `wgpu 30.0` + `egui-wgpu 0.37.0` Sparse 64-Tree Compute Raymarcher, Volumetric Combat VFX,
 //! and Combined Swapchain Blit + Immediate-Mode Tactical HUD Pipeline.
 
@@ -27,8 +42,8 @@ pub struct CameraUniforms {
 }
 
 pub struct VoxelRenderEngine {
-    pub window: Arc<Window>,
-    pub surface: wgpu::Surface<'static>,
+    pub window: Option<Arc<Window>>,
+    pub surface: Option<wgpu::Surface<'static>>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
@@ -62,21 +77,57 @@ impl VoxelRenderEngine {
         instances: &[GpuUnitInstance],
     ) -> Self {
         let size = window.inner_size();
-        let width = size.width.max(64);
-        let height = size.height.max(64);
+        Self::init_with_surface(
+            Some(window),
+            size.width.max(64),
+            size.height.max(64),
+            vox_gpu,
+            hex_tiles,
+            instances,
+        )
+        .await
+    }
 
+    pub async fn new_offscreen(
+        width: u32,
+        height: u32,
+        vox_gpu: &MultiAssetGpuBuffers,
+        hex_tiles: &[GpuHexOverlay],
+        instances: &[GpuUnitInstance],
+    ) -> Self {
+        Self::init_with_surface(
+            None,
+            width.max(64),
+            height.max(64),
+            vox_gpu,
+            hex_tiles,
+            instances,
+        )
+        .await
+    }
+
+    async fn init_with_surface(
+        window: Option<Arc<Window>>,
+        width: u32,
+        height: u32,
+        vox_gpu: &MultiAssetGpuBuffers,
+        hex_tiles: &[GpuHexOverlay],
+        instances: &[GpuUnitInstance],
+    ) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
-        let surface = instance
-            .create_surface(window.clone())
-            .expect("Failed to create wgpu window surface");
+        let surface = window.as_ref().map(|w| {
+            instance
+                .create_surface(w.clone())
+                .expect("Failed to create wgpu window surface")
+        });
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
+                compatible_surface: surface.as_ref(),
                 force_fallback_adapter: false,
                 apply_limit_buckets: false,
             })
@@ -95,26 +146,36 @@ impl VoxelRenderEngine {
             .await
             .expect("Failed to request wgpu device");
 
-        let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
+        let (format, alpha_mode) = if let Some(ref s) = surface {
+            let caps = s.get_capabilities(&adapter);
+            let fmt = caps
+                .formats
+                .iter()
+                .copied()
+                .find(|f| f.is_srgb())
+                .unwrap_or(caps.formats[0]);
+            (fmt, caps.alpha_modes[0])
+        } else {
+            (
+                wgpu::TextureFormat::Rgba8Unorm,
+                wgpu::CompositeAlphaMode::Opaque,
+            )
+        };
 
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format,
             width,
             height,
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
-        surface.configure(&device, &config);
+        if let Some(ref s) = surface {
+            s.configure(&device, &config);
+        }
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("raymarch_64tree.wgsl"),
@@ -217,7 +278,7 @@ impl VoxelRenderEngine {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_blit"),
+                entry_point: Some(if format.is_srgb() { "fs_blit" } else { "fs_blit_unorm" }),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -384,7 +445,9 @@ impl VoxelRenderEngine {
         }
         self.config.width = width;
         self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
+        if let Some(surface) = self.surface.as_ref() {
+            surface.configure(&self.device, &self.config);
+        }
         self.storage_tex_view = Self::create_raymarch_texture(&self.device, width, height);
         self.compute_bind_group = Self::build_compute_bind_group(
             &self.device,
@@ -409,9 +472,75 @@ impl VoxelRenderEngine {
 
     pub fn render_frame(
         &mut self,
+        cam: CameraUniforms,
+        paint_jobs: &[ClippedPrimitive],
+        textures_delta: &egui::TexturesDelta,
+    ) {
+        let Some(surface) = self.surface.as_ref() else {
+            return;
+        };
+        let output = match surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Occluded
+            | wgpu::CurrentSurfaceTexture::Validation => return,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                surface.configure(&self.device, &self.config);
+                return;
+            }
+        };
+
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let pixels_per_point = self
+            .window
+            .as_ref()
+            .map(|w| w.scale_factor() as f32)
+            .unwrap_or(1.0);
+        self.render_to_view(
+            cam,
+            paint_jobs,
+            textures_delta,
+            &view,
+            pixels_per_point,
+            None,
+        );
+        if let Some(window) = self.window.as_ref() {
+            window.pre_present_notify();
+        }
+        self.queue.present(output);
+    }
+
+    pub fn render_offscreen_frame(
+        &mut self,
+        cam: CameraUniforms,
+        paint_jobs: &[ClippedPrimitive],
+        textures_delta: &egui::TexturesDelta,
+        target_tex: &wgpu::Texture,
+        target_view: &wgpu::TextureView,
+        staging_copy: Option<&wgpu::Buffer>,
+    ) {
+        self.render_to_view(
+            cam,
+            paint_jobs,
+            textures_delta,
+            target_view,
+            1.0,
+            staging_copy.map(|buf| (target_tex, buf)),
+        );
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+    }
+
+    fn render_to_view(
+        &mut self,
         mut cam: CameraUniforms,
         paint_jobs: &[ClippedPrimitive],
         textures_delta: &egui::TexturesDelta,
+        view: &wgpu::TextureView,
+        pixels_per_point: f32,
+        staging_copy: Option<(&wgpu::Texture, &wgpu::Buffer)>,
     ) {
         cam.resolution = [self.config.width, self.config.height];
         cam.instance_count = self.instance_count;
@@ -420,21 +549,6 @@ impl VoxelRenderEngine {
         self.queue
             .write_buffer(&self.cam_buffer, 0, bytemuck::bytes_of(&cam));
 
-        let output = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => return,
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface.configure(&self.device, &self.config);
-                return;
-            }
-        };
-
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -443,7 +557,7 @@ impl VoxelRenderEngine {
 
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [self.config.width, self.config.height],
-            pixels_per_point: self.window.scale_factor() as f32,
+            pixels_per_point,
         };
 
         for (id, image_deltas) in &textures_delta.set {
@@ -504,9 +618,32 @@ impl VoxelRenderEngine {
             self.egui_renderer.free_texture(id);
         }
 
+        if let Some((src_tex, dst_buf)) = staging_copy {
+            let bytes_per_row = self.config.width * 4;
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: src_tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: dst_buf,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bytes_per_row),
+                        rows_per_image: Some(self.config.height),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: self.config.width,
+                    height: self.config.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+
         user_cmd_bufs.push(encoder.finish());
         self.queue.submit(user_cmd_bufs);
-        self.window.pre_present_notify();
-        self.queue.present(output);
     }
 }

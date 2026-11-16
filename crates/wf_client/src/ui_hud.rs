@@ -1,3 +1,18 @@
+// Copyright (C) 2026 CRV Science Network (https://crvscience.com)
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://gnu.org>.
+
 //! Immediate-mode `egui 0.37` Tactical HUD, Unit/Hex Inspector, Graveyard Queue,
 //! Quicksave/Quickload Controls, Scenario Victory/Defeat Modal, and 5-Card Hand UI.
 
@@ -404,63 +419,77 @@ Primal Surge: {}", bio_card.title, bio_card.primal_surge_effect))
                             .corner_radius(6)
                             .inner_margin(Margin::same(8))
                             .show(ui, |ui| {
-                                ui.set_width(184.0);
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        RichText::new(&card.unit_name)
-                                            .strong()
-                                            .color(Color32::WHITE),
+                                ui.vertical(|ui| {
+                                    ui.set_width(214.0);
+                                    ui.horizontal(|ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&card.unit_name)
+                                                    .strong()
+                                                    .color(Color32::WHITE),
+                                            )
+                                            .truncate(),
+                                        );
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                ui.label(
+                                                    RichText::new(format!("{}p", card.deck_points))
+                                                        .small()
+                                                        .color(Color32::from_rgb(200, 215, 225)),
+                                                );
+                                            },
+                                        );
+                                    });
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(format!(
+                                                "{:?} • {:?} • {}",
+                                                card.faction,
+                                                card.combat_class,
+                                                card.default_vox_slug()
+                                            ))
+                                            .small()
+                                            .color(badge),
+                                        )
+                                        .truncate(),
                                     );
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            ui.label(
-                                                RichText::new(format!("{}p", card.deck_points))
-                                                    .small()
-                                                    .color(Color32::from_rgb(200, 215, 225)),
-                                            );
-                                        },
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(format!(
+                                                "STR {} | ARM {} | MOV {} | RNG {}",
+                                                card.strength_hp,
+                                                card.armor,
+                                                card.movement,
+                                                card.ranged_distance
+                                            ))
+                                            .small()
+                                            .color(Color32::from_rgb(212, 224, 232)),
+                                        )
+                                        .truncate(),
                                     );
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(&card.signature_ability)
+                                                .small()
+                                                .italics()
+                                                .color(Color32::from_rgb(152, 198, 214)),
+                                        )
+                                        .truncate(),
+                                    );
+                                    ui.add_space(2.0);
+                                    let btn_txt = format!("Deploy ({} Mun)", card.encumbrance);
+                                    if ui
+                                        .add_enabled(session.can_local_player_act(), egui::Button::new(btn_txt))
+                                        .clicked()
+                                    {
+                                        session.mode = if is_selected {
+                                            CommandMode::Inspect
+                                        } else {
+                                            CommandMode::DeployHandCard(idx)
+                                        };
+                                    }
                                 });
-                                ui.label(
-                                    RichText::new(format!(
-                                        "{:?} • {:?} • {}",
-                                        card.faction,
-                                        card.combat_class,
-                                        card.default_vox_slug()
-                                    ))
-                                    .small()
-                                    .color(badge),
-                                );
-                                ui.label(
-                                    RichText::new(format!(
-                                        "STR {} | ARM {} | MOV {} | RNG {}",
-                                        card.strength_hp,
-                                        card.armor,
-                                        card.movement,
-                                        card.ranged_distance
-                                    ))
-                                    .small()
-                                    .color(Color32::from_rgb(212, 224, 232)),
-                                );
-                                ui.label(
-                                    RichText::new(&card.signature_ability)
-                                        .small()
-                                        .italics()
-                                        .color(Color32::from_rgb(152, 198, 214)),
-                                );
-                                ui.add_space(2.0);
-                                let btn_txt = format!("Deploy ({} Mun)", card.encumbrance);
-                                if ui
-                                    .add_enabled(session.can_local_player_act(), egui::Button::new(btn_txt))
-                                    .clicked()
-                                {
-                                    session.mode = if is_selected {
-                                        CommandMode::Inspect
-                                    } else {
-                                        CommandMode::DeployHandCard(idx)
-                                    };
-                                }
                             });
                     }
                 });
