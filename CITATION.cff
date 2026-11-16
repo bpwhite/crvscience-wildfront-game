@@ -11,9 +11,7 @@ version: "3.4.1"
 doi: "10.5281/zenodo.24222396"
 url: "https://crvscience.com/apps"
 repository-code: "https://github.com/bpwhite/crvscience-wildfront-game"
-license:
-  - MIT
-  - Apache-2.0
+license: "GPL-3.0-or-later"
 preferred-citation:
   type: article
   title: "WildFront BattleGrounds: Turn-Based Hex Strategy Game with Voxel Graphics and Procedural Map Generation"
