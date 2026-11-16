@@ -27,9 +27,9 @@ use egui::{Align2, Color32, Frame, Margin, Order, RichText, ScrollArea, Stroke, 
 use wf_core::{
     AbilityCatalog, BioTypeCardDef, CombatClass, DeckList, FactionCardDef, OrganismFaction, RosterManifest, UnitCardDef,
 };
-use wf_core::sqlite_db::{delete_unit_from_sqlite, save_unit_to_sqlite, DEFAULT_SQLITE_DB_PATH};
-use std::path::Path;
+use wf_core::sqlite_db::{delete_unit_from_sqlite, save_unit_to_sqlite};
 use crate::audio::{SfxCue, SpatialAudioEngine};
+use crate::paths::{ensure_parent_dir, resolve_asset_path, writable_app_path};
 use crate::silhouettes::{draw_unit_silhouette, phylopic_genus, phylopic_search_url};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -616,13 +616,17 @@ impl DatabaseManagerStudio {
 
                                         ui.add_space(4.0);
                                         if ui.button("💾 Save Changes to SQLite DB + Sync .ron").clicked() {
-                                            let db_p = Path::new(DEFAULT_SQLITE_DB_PATH);
-                                            match save_unit_to_sqlite(db_p, &card_clone) {
+                                            let db_p = resolve_asset_path("compiled/wildfront_roster.db")
+                                                .unwrap_or_else(|| writable_app_path("assets/compiled/wildfront_roster.db"));
+                                            let _ = ensure_parent_dir(&db_p);
+                                            match save_unit_to_sqlite(&db_p, &card_clone) {
                                                 Ok(_) => {
                                                     if let Ok(pretty) = ron::ser::to_string_pretty(roster, ron::ser::PrettyConfig::default()) {
-                                                        let _ = std::fs::write("assets/compiled/master_roster.ron", pretty);
+                                                        let ron_out = writable_app_path("assets/compiled/master_roster.ron");
+                                                        let _ = ensure_parent_dir(&ron_out);
+                                                        let _ = std::fs::write(ron_out, pretty);
                                                     }
-                                                    self.db_status_msg = format!("✓ Saved '{}' ({} pts) to wildfront_roster.db!", card_clone.card_key, card_clone.deck_points);
+                                                    self.db_status_msg = format!("✓ Saved '{}' ({} pts) to {}!", card_clone.card_key, card_clone.deck_points, db_p.display());
                                                     audio.play_ui(SfxCue::BioHealChime);
                                                 }
                                                 Err(e) => {
@@ -650,14 +654,19 @@ impl DatabaseManagerStudio {
                                     let new_key = format!("{} (Custom)", cloned.card_key);
                                     cloned.card_key = new_key.clone();
                                     cloned.unit_name = format!("{} (Custom)", cloned.unit_name);
-                                    let _ = save_unit_to_sqlite(Path::new(DEFAULT_SQLITE_DB_PATH), &cloned);
+                                    let db_p = resolve_asset_path("compiled/wildfront_roster.db")
+                                        .unwrap_or_else(|| writable_app_path("assets/compiled/wildfront_roster.db"));
+                                    let _ = ensure_parent_dir(&db_p);
+                                    let _ = save_unit_to_sqlite(&db_p, &cloned);
                                     roster.units.push(cloned);
                                     self.selected_card_key = new_key;
                                     self.edit_mode = true;
                                     self.db_status_msg = "Cloned card into SQLite DB—ready to edit!".to_string();
                                 } else if delete_requested && roster.units.len() > 1 {
                                     let key_del = card_clone.card_key.clone();
-                                    let _ = delete_unit_from_sqlite(Path::new(DEFAULT_SQLITE_DB_PATH), &key_del);
+                                    if let Some(db_p) = resolve_asset_path("compiled/wildfront_roster.db") {
+                                        let _ = delete_unit_from_sqlite(&db_p, &key_del);
+                                    }
                                     roster.units.retain(|u| u.card_key != key_del);
                                     self.selected_card_key = roster.units[0].card_key.clone();
                                     self.db_status_msg = format!("Deleted '{}' from SQLite DB.", key_del);

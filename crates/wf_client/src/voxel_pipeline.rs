@@ -115,7 +115,7 @@ impl VoxelRenderEngine {
         instances: &[GpuUnitInstance],
     ) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
+            backends: wgpu::Backends::all(),
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let surface = window.as_ref().map(|w| {
@@ -124,7 +124,7 @@ impl VoxelRenderEngine {
                 .expect("Failed to create wgpu window surface")
         });
 
-        let adapter = instance
+        let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: surface.as_ref(),
@@ -132,7 +132,29 @@ impl VoxelRenderEngine {
                 apply_limit_buckets: false,
             })
             .await
-            .expect("No suitable GPU adapter found");
+        {
+            Ok(a) => a,
+            Err(_) => match instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::LowPower,
+                    compatible_surface: surface.as_ref(),
+                    force_fallback_adapter: false,
+                    apply_limit_buckets: false,
+                })
+                .await
+            {
+                Ok(a) => a,
+                Err(_) => instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::None,
+                        compatible_surface: surface.as_ref(),
+                        force_fallback_adapter: true,
+                        apply_limit_buckets: false,
+                    })
+                    .await
+                    .expect("No suitable GPU adapter found"),
+            },
+        };
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {

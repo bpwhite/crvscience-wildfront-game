@@ -28,6 +28,7 @@ use wf_assets::stl_exporter::{
 };
 use wf_core::{DeckList, RosterManifest};
 use crate::audio::{SfxCue, SpatialAudioEngine};
+use crate::paths::{resolve_asset_path, writable_app_path};
 
 pub struct StlExportStudio {
     pub is_open: bool,
@@ -273,10 +274,12 @@ impl StlExportStudio {
                                         card.strength_hp,
                                         card.encumbrance
                                     );
-                                    let out_path = Path::new("exports/stl/cards").join(fname);
+                                    let out_path = writable_app_path("exports/stl/cards").join(fname);
+                                    let vox_dir = resolve_asset_path("vox")
+                                        .unwrap_or_else(|| writable_app_path("assets/vox"));
                                     match export_card_to_stl(
                                         card,
-                                        Path::new("assets/vox"),
+                                        &vox_dir,
                                         &out_path,
                                         &self.config,
                                     ) {
@@ -322,11 +325,13 @@ impl StlExportStudio {
                         .clicked()
                     {
                         let deck_slug = sanitize_filename_slug(&active_deck.deck_name);
-                        let out_dir = Path::new("exports/stl/decks").join(deck_slug);
+                        let out_dir = writable_app_path("exports/stl/decks").join(deck_slug);
+                        let vox_dir = resolve_asset_path("vox")
+                            .unwrap_or_else(|| writable_app_path("assets/vox"));
                         match export_deck_to_stl_folder(
                             active_deck,
                             roster,
-                            Path::new("assets/vox"),
+                            &vox_dir,
                             &out_dir,
                             &self.config,
                         ) {
@@ -355,11 +360,13 @@ impl StlExportStudio {
                         )
                         .clicked()
                     {
-                        let out_dir = Path::new("exports/stl/all_152_cards");
+                        let out_dir = writable_app_path("exports/stl/all_152_cards");
+                        let vox_dir = resolve_asset_path("vox")
+                            .unwrap_or_else(|| writable_app_path("assets/vox"));
                         let mut ok_cnt = 0usize;
                         for card in &roster.units {
                             let out_p = out_dir.join(format!("{}__STR{}_ENC{}.stl", sanitize_filename_slug(&card.card_key), card.strength_hp, card.encumbrance));
-                            if export_card_to_stl(card, Path::new("assets/vox"), &out_p, &self.config).is_ok() {
+                            if export_card_to_stl(card, &vox_dir, &out_p, &self.config).is_ok() {
                                 ok_cnt += 1;
                             }
                         }
@@ -378,10 +385,12 @@ impl StlExportStudio {
                         )
                         .clicked()
                     {
-                        let out_dir = Path::new("exports/stl/master_rigs");
+                        let out_dir = writable_app_path("exports/stl/master_rigs");
+                        let vox_dir = resolve_asset_path("vox")
+                            .unwrap_or_else(|| writable_app_path("assets/vox"));
                         match export_vox_directory_with_config(
-                            Path::new("assets/vox"),
-                            out_dir,
+                            &vox_dir,
+                            &out_dir,
                             &self.config,
                         ) {
                             Ok(cnt) => {
@@ -408,10 +417,12 @@ impl StlExportStudio {
                         )
                         .clicked()
                     {
-                        let out_dir = Path::new("exports/stl/terrain_hexes_45mm");
+                        let out_dir = writable_app_path("exports/stl/terrain_hexes_45mm");
+                        let vox_dir = resolve_asset_path("vox")
+                            .unwrap_or_else(|| writable_app_path("assets/vox"));
                         match export_terrain_hexes_with_config(
-                            Path::new("assets/vox"),
-                            out_dir,
+                            &vox_dir,
+                            &out_dir,
                             &self.config,
                         ) {
                             Ok(cnt) => {

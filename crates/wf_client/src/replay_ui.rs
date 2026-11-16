@@ -285,14 +285,17 @@ impl ReplayTheaterStudio {
                             scenario_title: session.scenario.title.clone(),
                             keyframes: session.timeline_frames.clone(),
                         };
-                        let p = Path::new(&self.export_path);
+                        let rel = Path::new(&self.export_path);
+                        let p = if rel.is_relative() {
+                            crate::paths::writable_app_path(&self.export_path)
+                        } else {
+                            rel.to_path_buf()
+                        };
                         let res = (|| -> Result<(), String> {
-                            if let Some(parent) = p.parent() {
-                                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                            }
+                            crate::paths::ensure_parent_dir(&p).map_err(|e| e.to_string())?;
                             let raw = to_string_pretty(&bundle, PrettyConfig::new().depth_limit(4))
                                 .map_err(|e| e.to_string())?;
-                            fs::write(p, raw).map_err(|e| e.to_string())
+                            fs::write(&p, raw).map_err(|e| e.to_string())
                         })();
                         match res {
                             Ok(()) => {
@@ -307,8 +310,13 @@ impl ReplayTheaterStudio {
                         }
                     }
                     if ui.button("📂 Import Timeline (.RON)").clicked() {
-                        let p = Path::new(&self.export_path);
-                        match fs::read_to_string(p)
+                        let rel = Path::new(&self.export_path);
+                        let p = if rel.is_relative() {
+                            crate::paths::writable_app_path(&self.export_path)
+                        } else {
+                            rel.to_path_buf()
+                        };
+                        match fs::read_to_string(&p)
                             .map_err(|e| e.to_string())
                             .and_then(|raw| ron::from_str::<SavedTimelineBundle>(&raw).map_err(|e| e.to_string()))
                         {

@@ -787,11 +787,12 @@ impl DeckBuilderScreen {
                             audio.play_ui(SfxCue::UiCardTurn);
                         }
                         if ui.button("📂 Load .ron").clicked() {
-                            let p = Path::new("assets/compiled/custom_user_deck.ron");
-                            if let Ok(raw) = fs::read_to_string(p) {
+                            let p = crate::paths::resolve_asset_path("compiled/custom_user_deck.ron")
+                                .unwrap_or_else(|| crate::paths::writable_app_path("assets/compiled/custom_user_deck.ron"));
+                            if let Ok(raw) = fs::read_to_string(&p) {
                                 if let Ok(loaded) = ron::from_str::<DeckList>(&raw) {
                                     self.working_deck = loaded;
-                                    self.status_banner = "Loaded assets/compiled/custom_user_deck.ron.".into();
+                                    self.status_banner = format!("Loaded {}.", p.display());
                                     audio.play_ui(SfxCue::UiCardTurn);
                                 }
                             } else {
@@ -801,8 +802,10 @@ impl DeckBuilderScreen {
                         if ui.button("🖨 Export Deck STLs").on_hover_text("Export every card in this deck as a watertight 45mm-hex .STL with 2.80mm thick-wall V-cradles").clicked() {
                             let cfg = TabletopPrintConfig::default();
                             let slug = sanitize_filename_slug(&self.working_deck.deck_name);
-                            let out_dir = Path::new("exports/stl/decks").join(slug);
-                            match export_deck_to_stl_folder(&self.working_deck, roster, Path::new("assets/vox"), &out_dir, &cfg) {
+                            let out_dir = crate::paths::writable_app_path("exports/stl/decks").join(slug);
+                            let vox_dir = crate::paths::resolve_asset_path("vox")
+                                .unwrap_or_else(|| crate::paths::writable_app_path("assets/vox"));
+                            match export_deck_to_stl_folder(&self.working_deck, roster, &vox_dir, &out_dir, &cfg) {
                                 Ok(reps) => {
                                     self.status_banner = format!("✓ Exported {} printable .STL miniatures + PRINT_MANIFEST.txt to {}!", reps.len(), out_dir.display());
                                     audio.play_ui(SfxCue::BioHealChime);
@@ -815,9 +818,17 @@ impl DeckBuilderScreen {
                         if ui.button("💾 Save .ron").clicked() {
                             let pretty = PrettyConfig::new().depth_limit(3);
                             if let Ok(serialized) = to_string_pretty(&self.working_deck, pretty) {
-                                let _ = fs::write("assets/compiled/custom_user_deck.ron", serialized);
-                                self.status_banner = "Saved custom deck to assets/compiled/custom_user_deck.ron!".into();
-                                audio.play_ui(SfxCue::UiCardTurn);
+                                let p = crate::paths::writable_app_path("assets/compiled/custom_user_deck.ron");
+                                let _ = crate::paths::ensure_parent_dir(&p);
+                                match fs::write(&p, serialized) {
+                                    Ok(()) => {
+                                        self.status_banner = format!("Saved custom deck to {}!", p.display());
+                                        audio.play_ui(SfxCue::UiCardTurn);
+                                    }
+                                    Err(e) => {
+                                        self.status_banner = format!("⚠ Save failed: {e}");
+                                    }
+                                }
                             }
                         }
                     });
@@ -1045,7 +1056,8 @@ impl DeckBuilderScreen {
                                 ComparisonTarget::PresetPurePlant => Self::build_preset_pure_plant(roster),
                                 ComparisonTarget::PresetPureInsect => Self::build_preset_pure_insect(roster),
                                 ComparisonTarget::CustomSavedRon => {
-                                    let p = Path::new("assets/compiled/custom_user_deck.ron");
+                                    let p = crate::paths::resolve_asset_path("compiled/custom_user_deck.ron")
+                                        .unwrap_or_else(|| crate::paths::writable_app_path("assets/compiled/custom_user_deck.ron"));
                                     fs::read_to_string(p)
                                         .ok()
                                         .and_then(|r| ron::from_str::<DeckList>(&r).ok())
@@ -1248,10 +1260,18 @@ impl DeckBuilderScreen {
                                             }
                                             if ui.small_button("🖨 STL").on_hover_text("Export watertight 3D-printable .STL with 45° micro-dice V-cradles").clicked() {
                                                 let cfg = TabletopPrintConfig::default();
-                                                let out_p = Path::new("exports/stl/cards").join(format!("{}__STR{}_ENC{}.stl", sanitize_filename_slug(&card.card_key), card.strength_hp, card.encumbrance));
-                                                if let Ok(rep) = export_card_to_stl(card, Path::new("assets/vox"), &out_p, &cfg) {
-                                                    self.status_banner = format!("✓ Exported {} ({})", rep.output_path.display(), rep.resolved_cradle_desc);
-                                                    audio.play_ui(SfxCue::BioHealChime);
+                                                let out_p = crate::paths::writable_app_path("exports/stl/cards")
+                                                    .join(format!("{}__STR{}_ENC{}.stl", sanitize_filename_slug(&card.card_key), card.strength_hp, card.encumbrance));
+                                                let vox_dir = crate::paths::resolve_asset_path("vox")
+                                                    .unwrap_or_else(|| crate::paths::writable_app_path("assets/vox"));
+                                                match export_card_to_stl(card, &vox_dir, &out_p, &cfg) {
+                                                    Ok(rep) => {
+                                                        self.status_banner = format!("✓ Exported {} ({})", rep.output_path.display(), rep.resolved_cradle_desc);
+                                                        audio.play_ui(SfxCue::BioHealChime);
+                                                    }
+                                                    Err(e) => {
+                                                        self.status_banner = format!("⚠ STL export error: {e}");
+                                                    }
                                                 }
                                             }
                                             ui.label(

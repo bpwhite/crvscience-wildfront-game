@@ -297,7 +297,10 @@ pub fn build_live_gpu_scene(
             continue;
         }
         unit_occupied_hexes.insert(ent.hex);
-        let Some(handle) = handles.get(&ent.vox_slug) else {
+        let Some(handle) = handles
+            .get(&ent.vox_slug)
+            .or_else(|| handles.get("__fallback_box_rig"))
+        else {
             continue;
         };
         let tile_morph = session
@@ -389,7 +392,10 @@ pub fn build_live_gpu_scene(
             let Some((slug, p_scale, y_nudge)) = prop_spec else {
                 continue;
             };
-            let Some(handle) = handles.get(slug) else {
+            let Some(handle) = handles
+                .get(slug)
+                .or_else(|| handles.get("__fallback_box_rig"))
+            else {
                 continue;
             };
 

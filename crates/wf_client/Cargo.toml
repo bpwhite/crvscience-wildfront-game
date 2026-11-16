@@ -28,3 +28,9 @@ ron.workspace = true
 serde.workspace = true
 anyhow.workspace = true
 log.workspace = true
+flate2 = "1.1"
+
+[build-dependencies]
+wf_core.workspace = true
+wf_assets.workspace = true
+flate2 = "1.1"

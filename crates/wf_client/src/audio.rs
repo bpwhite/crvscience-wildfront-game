@@ -21,7 +21,7 @@
 //! Gracefully falls back to silent mode on headless/no-audio systems.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::Path;
+use std::io::Cursor;
 use glam::{Mat4, Vec3};
 use kira::listener::ListenerHandle;
 use kira::sound::static_sound::StaticSoundData;
@@ -41,15 +41,15 @@ pub enum SfxCue {
 }
 
 impl SfxCue {
-    pub const ALL: [(Self, &'static str); 8] = [
-        (Self::LaserPulse, "assets/sfx/laser_pulse.wav"),
-        (Self::BallisticVolley, "assets/sfx/ballistic_volley.wav"),
-        (Self::MeleeClash, "assets/sfx/melee_clash.wav"),
-        (Self::VoxelExplosion, "assets/sfx/voxel_explosion.wav"),
-        (Self::OrbitalDeploy, "assets/sfx/orbital_deploy.wav"),
-        (Self::BioHealChime, "assets/sfx/bio_heal_chime.wav"),
-        (Self::VenomSnare, "assets/sfx/venom_snare.wav"),
-        (Self::UiCardTurn, "assets/sfx/ui_card_turn.wav"),
+    pub const ALL: [(Self, &'static str, &'static [u8]); 8] = [
+        (Self::LaserPulse, "sfx/laser_pulse.wav", include_bytes!("../../../assets/sfx/laser_pulse.wav")),
+        (Self::BallisticVolley, "sfx/ballistic_volley.wav", include_bytes!("../../../assets/sfx/ballistic_volley.wav")),
+        (Self::MeleeClash, "sfx/melee_clash.wav", include_bytes!("../../../assets/sfx/melee_clash.wav")),
+        (Self::VoxelExplosion, "sfx/voxel_explosion.wav", include_bytes!("../../../assets/sfx/voxel_explosion.wav")),
+        (Self::OrbitalDeploy, "sfx/orbital_deploy.wav", include_bytes!("../../../assets/sfx/orbital_deploy.wav")),
+        (Self::BioHealChime, "sfx/bio_heal_chime.wav", include_bytes!("../../../assets/sfx/bio_heal_chime.wav")),
+        (Self::VenomSnare, "sfx/venom_snare.wav", include_bytes!("../../../assets/sfx/venom_snare.wav")),
+        (Self::UiCardTurn, "sfx/ui_card_turn.wav", include_bytes!("../../../assets/sfx/ui_card_turn.wav")),
     ];
 }
 
@@ -105,11 +105,12 @@ impl SpatialAudioEngine {
             .ok()?;
 
         let mut clips = HashMap::new();
-        for (cue, rel_path) in SfxCue::ALL {
-            if Path::new(rel_path).exists() {
-                if let Ok(data) = StaticSoundData::from_file(rel_path) {
-                    clips.insert(cue, data);
-                }
+        for (cue, rel_path, embedded_wav) in SfxCue::ALL {
+            let loaded = crate::paths::resolve_asset_path(rel_path)
+                .and_then(|p| StaticSoundData::from_file(p).ok())
+                .or_else(|| StaticSoundData::from_cursor(Cursor::new(embedded_wav)).ok());
+            if let Some(data) = loaded {
+                clips.insert(cue, data);
             }
         }
         println!(

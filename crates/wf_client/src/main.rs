@@ -33,6 +33,7 @@ mod stl_export_ui;
 mod net_lockstep;
 mod game_session;
 mod picking;
+mod paths;
 mod scene;
 mod silhouettes;
 mod ui_hud;
@@ -42,8 +43,10 @@ mod world_overlays;
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Read;
 use std::sync::Arc;
 use std::time::Instant;
+use flate2::read::ZlibDecoder;
 use glam::{Mat4, Vec3};
 use hexx::Hex;
 use winit::application::ApplicationHandler;
@@ -53,11 +56,19 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
-use wf_core::voxel::CompiledModelHandle;
+use wf_core::voxel::{CompiledModelHandle, GpuLeafBrick, GpuNode64};
 use wf_core::{
-    compile_multi_asset_64tree, BakedVoxelAsset, DeckList, MultiAssetGpuBuffers, RosterManifest,
-    ScenarioId, WILDFRONT_THEME_2072,
+    DeckList, MultiAssetGpuBuffers, RosterManifest, ScenarioId, WILDFRONT_THEME_2072,
 };
+
+const EMBEDDED_MASTER_ROSTER_RON: &str =
+    include_str!("../../../assets/compiled/master_roster.ron");
+const EMBEDDED_STARTER_DECK_0_RON: &str =
+    include_str!("../../../assets/compiled/starter_deck_plant_cnidarian.ron");
+const EMBEDDED_STARTER_DECK_1_RON: &str =
+    include_str!("../../../assets/compiled/starter_deck_mammal_reptile.ron");
+const EMBEDDED_VOX_64TREE_ZLIB: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/precompiled_vox_64tree.bin"));
 use crate::audio::SpatialAudioEngine;
 use crate::codex_ui::CodexOverlay;
 use crate::deck_builder_ui::DeckBuilderScreen;
@@ -485,13 +496,15 @@ impl ApplicationHandler for WildfrontApp {
                         self.session.push_toast(mode_lbl);
                     }
                     PhysicalKey::Code(KeyCode::F5) => {
-                        match self.session.save_quicksave(Path::new(DEFAULT_QUICKSAVE_PATH), self.active_seed) {
+                        let save_p = crate::paths::writable_app_path(DEFAULT_QUICKSAVE_PATH);
+                        match self.session.save_quicksave(&save_p, self.active_seed) {
                             Ok(_) => self.audio.play_ui(SfxCue::BioHealChime),
                             Err(err) => self.session.push_toast(format!("⚠ Save failed: {err}")),
                         }
                     }
                     PhysicalKey::Code(KeyCode::F9) => {
-                        match self.session.load_quicksave(Path::new(DEFAULT_QUICKSAVE_PATH)) {
+                        let load_p = crate::paths::writable_app_path(DEFAULT_QUICKSAVE_PATH);
+                        match self.session.load_quicksave(&load_p) {
                             Ok(restored_seed) => {
                                 self.active_seed = restored_seed;
                                 self.audio.play_ui(SfxCue::UiCardTurn);
@@ -862,13 +875,15 @@ impl ApplicationHandler for WildfrontApp {
                     self.deck_builder.is_open = !self.deck_builder.is_open;
                 }
                 if hud_actions.quicksave {
-                    match self.session.save_quicksave(Path::new(DEFAULT_QUICKSAVE_PATH), self.active_seed) {
+                    let save_p = crate::paths::writable_app_path(DEFAULT_QUICKSAVE_PATH);
+                    match self.session.save_quicksave(&save_p, self.active_seed) {
                         Ok(_) => self.audio.play_ui(SfxCue::BioHealChime),
                         Err(err) => self.session.push_toast(format!("⚠ Save failed: {err}")),
                     }
                 }
                 if hud_actions.quickload {
-                    match self.session.load_quicksave(Path::new(DEFAULT_QUICKSAVE_PATH)) {
+                    let load_p = crate::paths::writable_app_path(DEFAULT_QUICKSAVE_PATH);
+                    match self.session.load_quicksave(&load_p) {
                         Ok(restored_seed) => {
                             self.active_seed = restored_seed;
                             self.audio.play_ui(SfxCue::UiCardTurn);
@@ -946,55 +961,127 @@ impl ApplicationHandler for WildfrontApp {
     }
 }
 
-fn load_baked_vox_assets() -> Vec<BakedVoxelAsset> {
-    let vox_dir = std::path::Path::new("assets/compiled/vox");
-    let mut paths: Vec<std::path::PathBuf> = fs::read_dir(vox_dir)
-        .unwrap_or_else(|e| panic!("Failed to read '{}': {}", vox_dir.display(), e))
-        .filter_map(|ent| ent.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map_or(false, |s| s.ends_with("_vox.ron"))
-        })
-        .collect();
-    paths.sort();
-    let mut out = Vec::with_capacity(paths.len());
-    for p in paths {
-        let raw = fs::read_to_string(&p)
-            .unwrap_or_else(|e| panic!("Failed to read '{}': {}", p.display(), e));
-        let asset: BakedVoxelAsset = ron::from_str(&raw)
-            .unwrap_or_else(|e| panic!("Invalid BakedVoxelAsset RON '{}': {}", p.display(), e));
-        out.push(asset);
+fn read_u32_le(cursor: &mut &[u8]) -> u32 {
+    let (head, rest) = cursor.split_at(4);
+    *cursor = rest;
+    u32::from_le_bytes([head[0], head[1], head[2], head[3]])
+}
+
+fn read_f32_le(cursor: &mut &[u8]) -> f32 {
+    let (head, rest) = cursor.split_at(4);
+    *cursor = rest;
+    f32::from_le_bytes([head[0], head[1], head[2], head[3]])
+}
+
+fn load_precompiled_vox_64tree() -> MultiAssetGpuBuffers {
+    let mut dec = ZlibDecoder::new(EMBEDDED_VOX_64TREE_ZLIB);
+    let mut raw = Vec::new();
+    dec.read_to_end(&mut raw)
+        .expect("Failed decompressing embedded precompiled_vox_64tree.bin");
+    let mut cur: &[u8] = &raw;
+    assert!(
+        cur.len() >= 8 && &cur[..8] == b"WF64TR01",
+        "Corrupt embedded precompiled_vox_64tree magic"
+    );
+    cur = &cur[8..];
+
+    let mut palette_linear_rgba = [[0.0_f32; 4]; 256];
+    for slot in &mut palette_linear_rgba {
+        for ch in slot {
+            *ch = read_f32_le(&mut cur);
+        }
     }
-    out
+
+    let node_count = read_u32_le(&mut cur) as usize;
+    let mut nodes = Vec::with_capacity(node_count);
+    for _ in 0..node_count {
+        nodes.push(GpuNode64 {
+            mask_lo: read_u32_le(&mut cur),
+            mask_hi: read_u32_le(&mut cur),
+            child_base_ptr: read_u32_le(&mut cur),
+            flags_and_lod_rgba: read_u32_le(&mut cur),
+        });
+    }
+
+    let brick_count = read_u32_le(&mut cur) as usize;
+    let mut bricks = Vec::with_capacity(brick_count);
+    for _ in 0..brick_count {
+        let mask_lo = read_u32_le(&mut cur);
+        let mask_hi = read_u32_le(&mut cur);
+        let lod_rgba = read_u32_le(&mut cur);
+        let _pad = read_u32_le(&mut cur);
+        let mut packed_mats = [0u32; 16];
+        for word in &mut packed_mats {
+            *word = read_u32_le(&mut cur);
+        }
+        bricks.push(GpuLeafBrick {
+            mask_lo,
+            mask_hi,
+            lod_rgba,
+            _pad,
+            packed_mats,
+        });
+    }
+
+    let handle_count = read_u32_le(&mut cur) as usize;
+    let mut handles = BTreeMap::new();
+    for _ in 0..handle_count {
+        let slug_len = read_u32_le(&mut cur) as usize;
+        let (slug_bytes, rest) = cur.split_at(slug_len);
+        cur = rest;
+        let slug = String::from_utf8(slug_bytes.to_vec()).expect("UTF-8 handle slug");
+        let root_node_index = read_u32_le(&mut cur);
+        let size_voxels = [
+            read_u32_le(&mut cur),
+            read_u32_le(&mut cur),
+            read_u32_le(&mut cur),
+        ];
+        handles.insert(
+            slug,
+            CompiledModelHandle {
+                root_node_index,
+                size_voxels,
+            },
+        );
+    }
+
+    MultiAssetGpuBuffers {
+        nodes,
+        bricks,
+        palette_linear_rgba,
+        handles,
+    }
 }
 
 fn load_roster_and_decks() -> (RosterManifest, [DeckList; 2]) {
-    let db_path = std::path::Path::new(wf_core::sqlite_db::DEFAULT_SQLITE_DB_PATH);
-    let roster: RosterManifest = if db_path.exists() {
-        match wf_core::sqlite_db::load_roster_from_sqlite(db_path) {
+    let roster: RosterManifest = if let Some(db_path) = crate::paths::resolve_asset_path("compiled/wildfront_roster.db") {
+        match wf_core::sqlite_db::load_roster_from_sqlite(&db_path) {
             Ok(r) if !r.units.is_empty() => {
                 println!("[wf_client] Loaded {} units from SQLite DB ({}).", r.units.len(), db_path.display());
                 r
             }
             _ => {
-                let raw_roster = fs::read_to_string("assets/compiled/master_roster.ron")
-                    .expect("Missing assets/compiled/master_roster.ron");
+                let raw_roster = crate::paths::resolve_asset_path("compiled/master_roster.ron")
+                    .and_then(|p| fs::read_to_string(p).ok())
+                    .unwrap_or_else(|| EMBEDDED_MASTER_ROSTER_RON.to_string());
                 ron::from_str(&raw_roster).expect("Invalid master_roster.ron")
             }
         }
     } else {
-        let raw_roster = fs::read_to_string("assets/compiled/master_roster.ron")
-            .expect("Missing assets/compiled/master_roster.ron");
+        let raw_roster = crate::paths::resolve_asset_path("compiled/master_roster.ron")
+            .and_then(|p| fs::read_to_string(p).ok())
+            .unwrap_or_else(|| EMBEDDED_MASTER_ROSTER_RON.to_string());
         ron::from_str(&raw_roster).expect("Invalid master_roster.ron")
     };
 
-    let raw_d0 = fs::read_to_string("assets/compiled/starter_deck_plant_cnidarian.ron")
-        .expect("Missing starter_deck_plant_cnidarian.ron");
+    let raw_d0 = crate::paths::resolve_asset_path("compiled/starter_deck_plant_cnidarian.ron")
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_else(|| EMBEDDED_STARTER_DECK_0_RON.to_string());
     let d0: DeckList = ron::from_str(&raw_d0).expect("Invalid starter_deck_plant_cnidarian.ron");
 
-    let raw_d1 = fs::read_to_string("assets/compiled/starter_deck_mammal_reptile.ron")
-        .expect("Missing starter_deck_mammal_reptile.ron");
+    let raw_d1 = crate::paths::resolve_asset_path("compiled/starter_deck_mammal_reptile.ron")
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_else(|| EMBEDDED_STARTER_DECK_1_RON.to_string());
     let d1: DeckList = ron::from_str(&raw_d1).expect("Invalid starter_deck_mammal_reptile.ron");
 
     (roster, [d0, d1])
@@ -1242,58 +1329,6 @@ fn render_headless_screenshot(app: &mut WildfrontApp, out_path: &std::path::Path
         mapped_at_creation: false,
     });
 
-    let mut fonts = egui::FontDefinitions::default();
-    if fonts.font_data.is_empty() {
-        let sans_bytes = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf")
-            .or_else(|_| std::fs::read(r"C:\Windows\Fonts\arial.ttf"));
-        if let Ok(bytes) = sans_bytes {
-            fonts.font_data.insert(
-                "ui-sans".to_owned(),
-                std::sync::Arc::new(egui::FontData::from_owned(bytes)),
-            );
-            fonts
-                .families
-                .entry(egui::FontFamily::Proportional)
-                .or_default()
-                .push("ui-sans".to_owned());
-        }
-        if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\consola.ttf") {
-            fonts.font_data.insert(
-                "ui-mono".to_owned(),
-                std::sync::Arc::new(egui::FontData::from_owned(bytes)),
-            );
-            fonts
-                .families
-                .entry(egui::FontFamily::Monospace)
-                .or_default()
-                .push("ui-mono".to_owned());
-        }
-        if fonts.font_data.contains_key("ui-sans") {
-            fonts
-                .families
-                .entry(egui::FontFamily::Monospace)
-                .or_default()
-                .push("ui-sans".to_owned());
-        }
-        if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\seguisym.ttf") {
-            fonts.font_data.insert(
-                "ui-sym".to_owned(),
-                std::sync::Arc::new(egui::FontData::from_owned(bytes)),
-            );
-            fonts
-                .families
-                .entry(egui::FontFamily::Proportional)
-                .or_default()
-                .push("ui-sym".to_owned());
-            fonts
-                .families
-                .entry(egui::FontFamily::Monospace)
-                .or_default()
-                .push("ui-sym".to_owned());
-        }
-        app.egui_ctx.set_fonts(fonts);
-    }
-
     app.egui_ctx.set_pixels_per_point(1.0);
 
     for frame_idx in 0..4u32 {
@@ -1443,12 +1478,11 @@ fn main() {
     println!("{}\n", WILDFRONT_THEME_2072);
 
     let (roster, decks) = load_roster_and_decks();
-    let baked_assets = load_baked_vox_assets();
-    let vox_gpu = compile_multi_asset_64tree(&baked_assets);
+    let vox_gpu = load_precompiled_vox_64tree();
     let handles = vox_gpu.handles.clone();
     println!(
-        "[wf_client] Uploaded {} Sparse 64-Tree rigs ({} nodes, {} bricks) + {} balanced cards.",
-        baked_assets.len(),
+        "[wf_client] Loaded {} Sparse 64-Tree rigs ({} nodes, {} bricks) + {} balanced cards.",
+        handles.len(),
         vox_gpu.nodes.len(),
         vox_gpu.bricks.len(),
         roster.units.len()
@@ -1484,6 +1518,7 @@ fn main() {
         engine: None,
         last_frame_instant: Instant::now(),
     };
+    crate::paths::install_ui_fonts(&app.egui_ctx);
     if let Some(out_path) = screenshot_out {
         render_headless_screenshot(&mut app, &out_path, screenshot_view);
         return;
