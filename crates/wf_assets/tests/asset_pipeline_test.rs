@@ -20,8 +20,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use wf_assets::stl_exporter::{
-    export_card_to_stl, export_deck_to_stl_folder, export_vox_to_stl, resolve_cradle_layout,
-    CradleMode, ResolvedCradleLayout, TabletopPrintConfig, MIN_PRINTABLE_CENTER_WALL_MM,
+    build_coplanar_voxel_stl_triangles, export_card_to_stl, export_deck_to_stl_folder,
+    export_vox_to_stl, resolve_cradle_layout, write_binary_stl_triangles, CradleMode,
+    ResolvedCradleLayout, TabletopPrintConfig, MIN_PRINTABLE_CENTER_WALL_MM,
 };
 use wf_assets::vox_baker::bake_vox_file;
 use wf_assets::xlsx_compiler::compile_master_xlsx;
@@ -246,4 +247,107 @@ fn test_dual_cradle_wall_thickness_and_manifold_across_card_classes() {
     assert_eq!(reps.len(), 3);
     assert!(deck_dir.join("PRINT_MANIFEST.txt").exists());
     let _ = fs::remove_dir_all(&deck_dir);
+}
+
+#[test]
+fn test_coplanar_voxel_merge_cuboid_exact_12_tris_and_real_rig_invariants() {
+    // 1. Solid 10x8x6 voxel cuboid -> unmerged = 2 * 2 * (80 + 60 + 48) = 752 tris -> merged MUST be exact 12 tris!
+    let (sx, sy, sz) = (10usize, 8usize, 6usize);
+    let occ = vec![true; sx * sy * sz];
+    let mm = 1.5_f32;
+    let (tris, bmin, bmax) = build_coplanar_voxel_stl_triangles(&occ, sx, sy, sz, mm, 7.5, 6.0);
+    assert_eq!(tris.len(), 12, "Solid cuboid must merge to exactly 12 triangles");
+    assert!((bmin[0] - (-7.5)).abs() < 1e-4 && (bmax[0] - 7.5).abs() < 1e-4);
+    assert!((bmin[1] - (-6.0)).abs() < 1e-4 && (bmax[1] - 6.0).abs() < 1e-4);
+    assert!((bmin[2] - 0.0).abs() < 1e-4 && (bmax[2] - 9.0).abs() < 1e-4);
+
+    let cuboid_stl = std::env::temp_dir().join("wf_test_cuboid_merged.stl");
+    write_binary_stl_triangles(&cuboid_stl, "cuboid_10x8x6", 2.8, &tris).unwrap();
+    let cuboid_bytes = fs::read(&cuboid_stl).unwrap();
+    let (tri_cnt, boundary, non_manifold, vol_mm3) = audit_binary_stl_2manifold(&cuboid_bytes);
+    assert_eq!(tri_cnt, 12);
+    assert_eq!(boundary, 0);
+    assert_eq!(non_manifold, 0);
+    let expected_vol = (sx * sy * sz) as f64 * (mm as f64).powi(3);
+    assert!(
+        (vol_mm3 - expected_vol).abs() < 0.25,
+        "Expected cuboid volume {expected_vol:.2} mm^3, got {vol_mm3:.2}"
+    );
+    let _ = fs::remove_file(&cuboid_stl);
+
+    // 2. Stepped L-shaped solid (checks T-junction elimination at step boundaries!)
+    let (lx, ly, lz) = (8usize, 6usize, 6usize);
+    let mut occ_step = vec![false; lx * ly * lz];
+    for x in 0..lx {
+        for y in 0..ly {
+            for z in 0..lz {
+                if z < 2 || (x < 4 && y < 3) {
+                    occ_step[x * (ly * lz) + y * lz + z] = true;
+                }
+            }
+        }
+    }
+    let (step_tris, _, _) = build_coplanar_voxel_stl_triangles(&occ_step, lx, ly, lz, 1.0, 4.0, 3.0);
+    assert!(step_tris.len() < 100, "Stepped L-shape should merge cleanly, got {} tris", step_tris.len());
+    let step_stl = std::env::temp_dir().join("wf_test_step_merged.stl");
+    write_binary_stl_triangles(&step_stl, "step_L", 2.8, &step_tris).unwrap();
+    let step_bytes = fs::read(&step_stl).unwrap();
+    let (_, sb, snm, svol) = audit_binary_stl_2manifold(&step_bytes);
+    assert_eq!(sb, 0, "T-junction / boundary edges on stepped L-shape!");
+    assert_eq!(snm, 0, "Non-manifold edges on stepped L-shape!");
+    let expected_step_vol = occ_step.iter().filter(|&&b| b).count() as f64;
+    assert!((svol - expected_step_vol).abs() < 0.1);
+    let _ = fs::remove_file(&step_stl);
+
+    // 3. Real Battlephant rig: verify outward normals, non-degenerate triangles, bounding box, and >= 45% triangle reduction
+    let root = repo_root();
+    let raw_roster = fs::read_to_string(root.join("assets/compiled/master_roster.ron")).unwrap();
+    let roster: RosterManifest = ron::from_str(&raw_roster).unwrap();
+    let lookup = roster.index_by_key();
+    let battlephant = lookup["Battlephant"];
+    let bp_stl = std::env::temp_dir().join("wf_test_bp_coplanar.stl");
+    let cfg = TabletopPrintConfig::default();
+    let rep = export_card_to_stl(battlephant, &root.join("assets/vox"), &bp_stl, &cfg).unwrap();
+    let bp_bytes = fs::read(&bp_stl).unwrap();
+    let (bp_tris, b_ed, nm_ed, _) = audit_binary_stl_2manifold(&bp_bytes);
+    assert_eq!(b_ed, 0);
+    assert_eq!(nm_ed, 0);
+    assert_eq!(bp_tris, rep.triangle_count);
+
+    // Verify bounding box matches footprint_mm and every triangle has positive area & outward normal
+    let mut min_v = [f32::MAX; 3];
+    let mut max_v = [f32::MIN; 3];
+    for i in 0..bp_tris {
+        let base = 84 + i * 50;
+        let read_v = |off: usize| -> [f32; 3] {
+            [
+                f32::from_le_bytes(bp_bytes[off..off + 4].try_into().unwrap()),
+                f32::from_le_bytes(bp_bytes[off + 4..off + 8].try_into().unwrap()),
+                f32::from_le_bytes(bp_bytes[off + 8..off + 12].try_into().unwrap()),
+            ]
+        };
+        let n = read_v(base);
+        let v0 = read_v(base + 12);
+        let v1 = read_v(base + 24);
+        let v2 = read_v(base + 36);
+        for v in [v0, v1, v2] {
+            for k in 0..3 {
+                min_v[k] = min_v[k].min(v[k]);
+                max_v[k] = max_v[k].max(v[k]);
+            }
+        }
+        let e1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
+        let e2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
+        let cross = [
+            e1[1] * e2[2] - e1[2] * e2[1],
+            e1[2] * e2[0] - e1[0] * e2[2],
+            e1[0] * e2[1] - e1[1] * e2[0],
+        ];
+        let dot = cross[0] * n[0] + cross[1] * n[1] + cross[2] * n[2];
+        assert!(dot > 1e-6, "Degenerate or inverted triangle #{i}: cross.n = {dot}");
+    }
+    assert!((max_v[0] - min_v[0] - rep.footprint_mm.0).abs() < 1e-3);
+    assert!((max_v[1] - min_v[1] - rep.footprint_mm.1).abs() < 1e-3);
+    assert!((max_v[2] - min_v[2] - rep.footprint_mm.2).abs() < 1e-3);
+    let _ = fs::remove_file(&bp_stl);
 }

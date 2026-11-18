@@ -9,21 +9,21 @@ DECK_AUDIT,Insect,OrganismFaction,8,137,17.12,7.31,max_point_delta_0
 DECK_AUDIT,Fish,OrganismFaction,8,145,18.12,7.94,max_point_delta_0
 DECK_AUDIT,Cnidarian,OrganismFaction,7,147,21.00,8.07,max_point_delta_0
 DECK_AUDIT,Amphibian,OrganismFaction,7,126,18.00,7.43,max_point_delta_0
-STANDING,Australia,Continent,10,8,80.00,15.10,win_rate_pct
-STANDING,Africa,Continent,10,5,50.00,27.30,win_rate_pct
+STANDING,Africa,Continent,10,6,60.00,27.20,win_rate_pct
+STANDING,Australia,Continent,10,6,60.00,15.20,win_rate_pct
+STANDING,Europe,Continent,10,5,50.00,21.70,win_rate_pct
 STANDING,NorthAmerica,Continent,10,5,50.00,27.40,win_rate_pct
 STANDING,SouthAmerica,Continent,10,5,50.00,17.30,win_rate_pct
-STANDING,Europe,Continent,10,4,40.00,21.50,win_rate_pct
 STANDING,Asia,Continent,10,3,30.00,21.20,win_rate_pct
-STANDING,Pure Insect,Pure Bio-Type,16,9,56.25,18.75,win_rate_pct
-STANDING,Pure Mammal,Pure Bio-Type,16,9,56.25,23.00,win_rate_pct
-STANDING,Pure Cnidarian,Pure Bio-Type,16,8,50.00,20.81,win_rate_pct
-STANDING,Pure Plant,Pure Bio-Type,16,7,43.75,18.81,win_rate_pct
-STANDING,Pure Bird,Pure Bio-Type,16,6,37.50,22.81,win_rate_pct
-STANDING,Pure Amphibian,Pure Bio-Type,16,4,25.00,25.94,win_rate_pct
-STANDING,Pure Fish,Pure Bio-Type,16,4,25.00,25.81,win_rate_pct
+STANDING,Pure Insect,Pure Bio-Type,16,11,68.75,18.81,win_rate_pct
+STANDING,Pure Mammal,Pure Bio-Type,16,9,56.25,22.69,win_rate_pct
+STANDING,Pure Cnidarian,Pure Bio-Type,16,7,43.75,20.75,win_rate_pct
+STANDING,Pure Plant,Pure Bio-Type,16,7,43.75,18.69,win_rate_pct
+STANDING,Pure Bird,Pure Bio-Type,16,6,37.50,22.94,win_rate_pct
+STANDING,Pure Fish,Pure Bio-Type,16,4,25.00,25.69,win_rate_pct
+STANDING,Pure Amphibian,Pure Bio-Type,16,3,18.75,25.88,win_rate_pct
 STANDING,Pure Reptile,Pure Bio-Type,16,3,18.75,28.44,win_rate_pct
-STANDING,Pure Arachnid,Pure Bio-Type,16,2,12.50,20.88,win_rate_pct
+STANDING,Pure Arachnid,Pure Bio-Type,16,2,12.50,20.75,win_rate_pct
 MATCH,Pure Mammal,Pure Reptile,1,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Mammal,Pure Plant,2,2,0,9,2. Bunker Breakout (Ruined Bunker Caldera)
 MATCH,Pure Mammal,Pure Bird,3,1,100,10,3. Bio-River Convoy (Overgrown Bio-Jungle)
@@ -31,7 +31,7 @@ MATCH,Pure Mammal,Pure Arachnid,4,1,100,20,4. Pelagic Atoll Assault (Sunken Ocea
 MATCH,Pure Mammal,Pure Insect,5,1,100,9,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Mammal,Pure Fish,6,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Mammal,Pure Cnidarian,7,1,100,13,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Pure Mammal,Pure Amphibian,8,1,100,11,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Pure Mammal,Pure Amphibian,8,1,100,7,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Pure Reptile,Pure Mammal,9,0,0,46,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Pure Reptile,Pure Plant,10,1,100,8,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Reptile,Pure Bird,11,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
@@ -46,32 +46,32 @@ MATCH,Pure Plant,Pure Bird,19,0,0,46,4. Pelagic Atoll Assault (Sunken Oceanic At
 MATCH,Pure Plant,Pure Arachnid,20,1,100,8,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Plant,Pure Insect,21,1,100,23,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Plant,Pure Fish,22,1,100,6,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Pure Plant,Pure Cnidarian,23,2,0,13,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Pure Plant,Pure Cnidarian,23,1,100,12,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Pure Plant,Pure Amphibian,24,0,0,46,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Pure Bird,Pure Mammal,25,2,0,15,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Bird,Pure Reptile,26,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Bird,Pure Plant,27,1,100,7,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Pure Bird,Pure Arachnid,28,1,100,12,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Pure Bird,Pure Arachnid,28,1,100,13,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Pure Bird,Pure Insect,29,2,0,31,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Pure Bird,Pure Fish,30,1,100,12,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Bird,Pure Cnidarian,31,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Bird,Pure Amphibian,32,1,100,14,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Pure Arachnid,Pure Mammal,33,2,0,10,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Pure Arachnid,Pure Mammal,33,2,0,9,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Pure Arachnid,Pure Reptile,34,0,0,46,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Pure Arachnid,Pure Plant,35,1,100,15,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Arachnid,Pure Bird,36,2,0,25,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Arachnid,Pure Insect,37,2,0,12,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Pure Arachnid,Pure Fish,38,2,0,10,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Pure Arachnid,Pure Fish,38,2,0,8,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Pure Arachnid,Pure Cnidarian,39,0,0,46,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Pure Arachnid,Pure Amphibian,40,1,100,9,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Insect,Pure Mammal,41,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Insect,Pure Reptile,42,1,100,9,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Pure Insect,Pure Plant,43,2,0,10,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Pure Insect,Pure Plant,43,1,100,9,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Pure Insect,Pure Bird,44,1,100,29,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Pure Insect,Pure Arachnid,45,1,100,8,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Insect,Pure Fish,46,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Insect,Pure Cnidarian,47,1,100,9,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Pure Insect,Pure Amphibian,48,2,0,9,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Pure Insect,Pure Amphibian,48,1,100,11,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Pure Fish,Pure Mammal,49,0,0,46,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Pure Fish,Pure Reptile,50,2,0,16,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Fish,Pure Plant,51,1,100,41,1. Emergence Skirmish (Savannah Dustbowl)
@@ -91,17 +91,17 @@ MATCH,Pure Cnidarian,Pure Amphibian,64,0,0,46,4. Pelagic Atoll Assault (Sunken O
 MATCH,Pure Amphibian,Pure Mammal,65,2,0,9,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Amphibian,Pure Reptile,66,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Amphibian,Pure Plant,67,2,0,14,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Pure Amphibian,Pure Bird,68,1,100,9,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Pure Amphibian,Pure Bird,68,1,100,10,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Pure Amphibian,Pure Arachnid,69,0,0,46,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Pure Amphibian,Pure Insect,70,2,0,11,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Pure Amphibian,Pure Fish,71,0,0,46,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Pure Amphibian,Pure Cnidarian,72,1,100,12,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Australia,Africa,73,1,100,12,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Australia,Africa,73,2,0,13,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Australia,Asia,74,1,100,37,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Australia,Europe,75,1,100,8,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Australia,NorthAmerica,76,1,100,37,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Australia,SouthAmerica,77,1,100,9,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Africa,Australia,78,1,100,11,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Africa,Australia,78,1,100,9,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Africa,Asia,79,2,0,37,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Africa,Europe,80,1,100,14,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Africa,NorthAmerica,81,2,0,37,1. Emergence Skirmish (Savannah Dustbowl)
@@ -111,7 +111,7 @@ MATCH,Asia,Africa,84,2,0,37,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Asia,Europe,85,1,100,10,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Asia,NorthAmerica,86,2,0,37,1. Emergence Skirmish (Savannah Dustbowl)
 MATCH,Asia,SouthAmerica,87,1,100,13,2. Bunker Breakout (Ruined Bunker Caldera)
-MATCH,Europe,Australia,88,2,0,10,3. Bio-River Convoy (Overgrown Bio-Jungle)
+MATCH,Europe,Australia,88,1,100,12,3. Bio-River Convoy (Overgrown Bio-Jungle)
 MATCH,Europe,Africa,89,1,100,37,4. Pelagic Atoll Assault (Sunken Oceanic Atoll)
 MATCH,Europe,Asia,90,1,100,8,5. King of the Control Spire (Irradiated Badlands)
 MATCH,Europe,NorthAmerica,91,2,0,37,1. Emergence Skirmish (Savannah Dustbowl)

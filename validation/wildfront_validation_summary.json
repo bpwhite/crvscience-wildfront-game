@@ -8,21 +8,21 @@
   "t1_hex_determinism_replay": {
 "axial_symmetry_checks": 160,
 "cliff_blocks_observed": 0,
-"water_blocks_terrestrial": 732,
+"water_blocks_terrestrial": 720,
 "flyer_bypasses_observed": 0,
-"aquatic_water_passes": 732,
+"aquatic_water_passes": 720,
 "deterministic_replays_verified": 3,
 "total_verified_action_steps": 237,
 "scenarios": [
       {"scenario": "1. Emergence Skirmish (Savannah Dustbowl)", "tiles": 127, "cover_tiles": 36, "water_tiles": 13, "directed_cliff_edges": 0},
       {"scenario": "2. Bunker Breakout (Ruined Bunker Caldera)", "tiles": 169, "cover_tiles": 22, "water_tiles": 11, "directed_cliff_edges": 0},
-      {"scenario": "3. Bio-River Convoy (Overgrown Bio-Jungle)", "tiles": 169, "cover_tiles": 35, "water_tiles": 26, "directed_cliff_edges": 0},
+      {"scenario": "3. Bio-River Convoy (Overgrown Bio-Jungle)", "tiles": 169, "cover_tiles": 35, "water_tiles": 24, "directed_cliff_edges": 0},
       {"scenario": "4. Pelagic Atoll Assault (Sunken Oceanic Atoll)", "tiles": 217, "cover_tiles": 37, "water_tiles": 73, "directed_cliff_edges": 0},
       {"scenario": "5. King of the Control Spire (Irradiated Badlands)", "tiles": 127, "cover_tiles": 19, "water_tiles": 15, "directed_cliff_edges": 0}
     ],
 "replay_runs": [
       {"scenario": "5. King of the Control Spire (Irradiated Badlands)", "seed": 209934250803201, "winner_team": 1, "turns": 8, "recorded_steps": 60, "final_state_hash_hex": "0x502ecab43d99b1fd"},
-      {"scenario": "3. Bio-River Convoy (Overgrown Bio-Jungle)", "seed": 209934250803202, "winner_team": 1, "turns": 10, "recorded_steps": 78, "final_state_hash_hex": "0xb27519b6313e86df"},
+      {"scenario": "3. Bio-River Convoy (Overgrown Bio-Jungle)", "seed": 209934250803202, "winner_team": 1, "turns": 10, "recorded_steps": 78, "final_state_hash_hex": "0xe7c1ba8746e05a2d"},
       {"scenario": "2. Bunker Breakout (Ruined Bunker Caldera)", "seed": 209934250803203, "winner_team": 1, "turns": 14, "recorded_steps": 99, "final_state_hash_hex": "0xd27c65a5437a354c"}
     ]
 },
@@ -38,28 +38,28 @@
 "tournament_ai_difficulty": "Veteran (1-Ply EV Focus)",
 "total_matches": 102,
 "decisive_matches": 82,
-"p1_wins": 46,
-"p2_wins": 36,
+"p1_wins": 49,
+"p2_wins": 33,
 "median_turns": 14.00,
-"tournament_wall_ms": 54988.79,
-"csv_bytes": 10415,
+"tournament_wall_ms": 101353.95,
+"csv_bytes": 10419,
 "combat_class_counts": { "Artifact": 7, "Commander": 6, "ControlNode": 1, "Heavy": 27, "Installation": 6, "Light": 22, "Medic": 9, "Medium": 29, "SupplyDepot": 1, "Support": 9, "SupportInstallation": 5, "TacticalDeployment": 19, "Trap": 11 },
 "standings": [
-      {"name": "Australia", "category": "Continent", "games": 10, "wins": 8, "win_rate_pct": 80.00, "avg_turns": 15.10},
-      {"name": "Africa", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 27.30},
+      {"name": "Africa", "category": "Continent", "games": 10, "wins": 6, "win_rate_pct": 60.00, "avg_turns": 27.20},
+      {"name": "Australia", "category": "Continent", "games": 10, "wins": 6, "win_rate_pct": 60.00, "avg_turns": 15.20},
+      {"name": "Europe", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 21.70},
       {"name": "NorthAmerica", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 27.40},
       {"name": "SouthAmerica", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 17.30},
-      {"name": "Europe", "category": "Continent", "games": 10, "wins": 4, "win_rate_pct": 40.00, "avg_turns": 21.50},
       {"name": "Asia", "category": "Continent", "games": 10, "wins": 3, "win_rate_pct": 30.00, "avg_turns": 21.20},
-      {"name": "Pure Insect", "category": "Pure Bio-Type", "games": 16, "wins": 9, "win_rate_pct": 56.25, "avg_turns": 18.75},
-      {"name": "Pure Mammal", "category": "Pure Bio-Type", "games": 16, "wins": 9, "win_rate_pct": 56.25, "avg_turns": 23.00},
-      {"name": "Pure Cnidarian", "category": "Pure Bio-Type", "games": 16, "wins": 8, "win_rate_pct": 50.00, "avg_turns": 20.81},
-      {"name": "Pure Plant", "category": "Pure Bio-Type", "games": 16, "wins": 7, "win_rate_pct": 43.75, "avg_turns": 18.81},
-      {"name": "Pure Bird", "category": "Pure Bio-Type", "games": 16, "wins": 6, "win_rate_pct": 37.50, "avg_turns": 22.81},
-      {"name": "Pure Amphibian", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 25.94},
-      {"name": "Pure Fish", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 25.81},
+      {"name": "Pure Insect", "category": "Pure Bio-Type", "games": 16, "wins": 11, "win_rate_pct": 68.75, "avg_turns": 18.81},
+      {"name": "Pure Mammal", "category": "Pure Bio-Type", "games": 16, "wins": 9, "win_rate_pct": 56.25, "avg_turns": 22.69},
+      {"name": "Pure Cnidarian", "category": "Pure Bio-Type", "games": 16, "wins": 7, "win_rate_pct": 43.75, "avg_turns": 20.75},
+      {"name": "Pure Plant", "category": "Pure Bio-Type", "games": 16, "wins": 7, "win_rate_pct": 43.75, "avg_turns": 18.69},
+      {"name": "Pure Bird", "category": "Pure Bio-Type", "games": 16, "wins": 6, "win_rate_pct": 37.50, "avg_turns": 22.94},
+      {"name": "Pure Fish", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 25.69},
+      {"name": "Pure Amphibian", "category": "Pure Bio-Type", "games": 16, "wins": 3, "win_rate_pct": 18.75, "avg_turns": 25.88},
       {"name": "Pure Reptile", "category": "Pure Bio-Type", "games": 16, "wins": 3, "win_rate_pct": 18.75, "avg_turns": 28.44},
-      {"name": "Pure Arachnid", "category": "Pure Bio-Type", "games": 16, "wins": 2, "win_rate_pct": 12.50, "avg_turns": 20.88}
+      {"name": "Pure Arachnid", "category": "Pure Bio-Type", "games": 16, "wins": 2, "win_rate_pct": 12.50, "avg_turns": 20.75}
     ]
 },
   "t3_svo_64tree_raymarching": {
@@ -76,7 +76,7 @@
 "interior_voxel_hits": 542,
 "benchmark_rays": 24000,
 "benchmark_hits": 14691,
-"benchmark_elapsed_ms": 84.15,
-"cpu_debug_rays_per_sec": 285215.8
+"benchmark_elapsed_ms": 343.61,
+"cpu_debug_rays_per_sec": 69846.8
 }
 }

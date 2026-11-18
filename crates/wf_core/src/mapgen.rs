@@ -334,7 +334,6 @@ pub fn generate_procedural_map(cfg: &MapGenConfig) -> BattleHexMap {
     }
 
     // Stage 5: Compute directional cliff masks & guarantee terrestrial/shallow path connectivity
-    recompute_cliff_masks(&mut tiles);
     let mut map = BattleHexMap {
         radius: cfg.radius,
         primary_biome: match cfg.biome {
@@ -347,6 +346,7 @@ pub fn generate_procedural_map(cfg: &MapGenConfig) -> BattleHexMap {
         },
         tiles,
     };
+    map.recompute_cliff_masks();
 
     if cfg.biome == Biome::SunkenAtoll {
         for (&h, t) in map.tiles.iter_mut() {
@@ -360,22 +360,7 @@ pub fn generate_procedural_map(cfg: &MapGenConfig) -> BattleHexMap {
     map
 }
 
-fn recompute_cliff_masks(tiles: &mut HashMap<Hex, HexTile>) {
-    let snapshot: HashMap<Hex, u8> = tiles.iter().map(|(&h, t)| (h, t.elevation)).collect();
-    for (&h, tile) in tiles.iter_mut() {
-        let mut mask = 0u8;
-        for (edge_idx, nb) in h.all_neighbors().into_iter().enumerate() {
-            if let Some(&nb_elev) = snapshot.get(&nb) {
-                if tile.elevation.abs_diff(nb_elev) >= 2 {
-                    mask |= 1 << edge_idx;
-                }
-            }
-        }
-        tile.cliff_edges = mask;
-    }
-}
-
-fn has_traversal_path(map: &BattleHexMap, start: Hex, goal: Hex, amphibious_tier: u8) -> bool {
+pub fn has_traversal_path(map: &BattleHexMap, start: Hex, goal: Hex, amphibious_tier: u8) -> bool {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     visited.insert(start);
@@ -396,16 +381,31 @@ fn has_traversal_path(map: &BattleHexMap, start: Hex, goal: Hex, amphibious_tier
 }
 
 /// Carves a direct ShallowFord / stepped-ramp corridor if random noise ever blocks ground access.
-fn ensure_base_connectivity(map: &mut BattleHexMap, p1: Hex, p2: Hex, allow_semi_aquatic: bool) {
+pub fn ensure_base_connectivity(map: &mut BattleHexMap, p1: Hex, p2: Hex, allow_semi_aquatic: bool) {
     let tier = if allow_semi_aquatic { 1 } else { 0 };
     if has_traversal_path(map, p1, p2, tier) {
         return;
     }
-    let line = p1.line_to(p2);
+    let line: Vec<Hex> = p1.line_to(p2).collect();
+    let goal_elev = map.tiles.get(&p2).map(|t| t.elevation).unwrap_or(0);
     let mut prev_elev = map.tiles.get(&p1).map(|t| t.elevation).unwrap_or(0);
-    for h in line {
+    let last_idx = line.len().saturating_sub(1);
+
+    for (idx, h) in line.into_iter().enumerate() {
+        let remaining = last_idx.saturating_sub(idx) as u8;
         if let Some(t) = map.tiles.get_mut(&h) {
-            if t.elevation.abs_diff(prev_elev) >= 2 {
+            if idx > 0 && idx < last_idx {
+                if t.elevation.abs_diff(prev_elev) >= 2 {
+                    t.elevation = prev_elev;
+                }
+                let max_reachable = goal_elev.saturating_add(remaining);
+                let min_reachable = goal_elev.saturating_sub(remaining);
+                if t.elevation > max_reachable {
+                    t.elevation = max_reachable.min(prev_elev.saturating_add(1));
+                } else if t.elevation < min_reachable {
+                    t.elevation = min_reachable.max(prev_elev.saturating_sub(1));
+                }
+            } else if t.elevation.abs_diff(prev_elev) >= 2 {
                 t.elevation = prev_elev;
             }
             prev_elev = t.elevation;
@@ -420,5 +420,5 @@ fn ensure_base_connectivity(map: &mut BattleHexMap, p1: Hex, p2: Hex, allow_semi
             }
         }
     }
-    recompute_cliff_masks(&mut map.tiles);
+    map.recompute_cliff_masks();
 }

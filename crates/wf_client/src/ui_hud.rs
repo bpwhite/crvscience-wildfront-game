@@ -17,8 +17,7 @@
 //! Quicksave/Quickload Controls, Scenario Victory/Defeat Modal, and 5-Card Hand UI.
 
 use egui::{Align2, Color32, Frame, Margin, Order, RichText, ScrollArea, Stroke, Ui, Window};
-use wf_core::combat::{required_ranged_hit_roll, CombatContext};
-use wf_core::{OrganismFaction, ScenarioId};
+use wf_core::{OrganismFaction, OriginAllegiance, ScenarioId};
 use crate::audio::{SfxCue, SpatialAudioEngine};
 use crate::game_session::{ClientMatchState, CommandMode};
 use crate::vfx::VfxManager;
@@ -39,6 +38,7 @@ pub struct HudActions {
     pub cycle_atmosphere: bool,
     pub toggle_main_menu: bool,
     pub toggle_codex: bool,
+    pub open_about: bool,
     pub quicksave: bool,
     pub quickload: bool,
     pub switch_deck: Option<usize>,
@@ -63,11 +63,24 @@ impl Default for HudActions {
             cycle_atmosphere: false,
             toggle_main_menu: false,
             toggle_codex: false,
+            open_about: false,
             quicksave: false,
             quickload: false,
             switch_deck: None,
             end_turn: false,
         }
+    }
+}
+
+fn allegiance_tag(orig: OriginAllegiance) -> &'static str {
+    match orig {
+        OriginAllegiance::Australia => "[AU]",
+        OriginAllegiance::Africa => "[AF]",
+        OriginAllegiance::Asia => "[AS]",
+        OriginAllegiance::Europe => "[EU]",
+        OriginAllegiance::NorthAmerica => "[US]",
+        OriginAllegiance::SouthAmerica => "[BR]",
+        OriginAllegiance::Neutral => "[N]",
     }
 }
 
@@ -318,7 +331,7 @@ pub fn draw_tactical_hud(
                     && session.economy.home_base_munitions.get(&viewing_team).copied().unwrap_or(0) >= u16::from(fac_card.active_munition_cost);
 
                 let fac_btn = egui::Button::new(
-                    RichText::new(format!("🇦🇺 {} ({} Act, {} Mun)", fac_card.active_ability_name, fac_card.active_action_cost, fac_card.active_munition_cost))
+                    RichText::new(format!("{} {} ({} Act, {} Mun)", allegiance_tag(team_deck.faction), fac_card.active_ability_name, fac_card.active_action_cost, fac_card.active_munition_cost))
                         .strong()
                         .color(Color32::WHITE),
                 )
@@ -330,7 +343,7 @@ Doctrine: {}
 ↳ {}", fac_card.title, fac_card.command_doctrine, fac_card.active_effect_summary))
                     .clicked()
                 {
-                    session.execute_faction_command_ability(viewing_team, vfx, audio);
+                    session.execute_faction_command_ability(viewing_team, true, vfx, audio);
                 }
 
                 let bio_act_ready = session.can_local_player_act()
@@ -339,7 +352,7 @@ Doctrine: {}
                     && session.economy.home_base_munitions.get(&viewing_team).copied().unwrap_or(0) >= u16::from(bio_card.primal_surge_cost.1);
 
                 let bio_btn = egui::Button::new(
-                    RichText::new(format!("🧬 {} ({} Act, {} Mun)", bio_card.primal_surge_name, bio_card.primal_surge_cost.0, bio_card.primal_surge_cost.1))
+                    RichText::new(format!("✦ {} ({} Act, {} Mun)", bio_card.primal_surge_name, bio_card.primal_surge_cost.0, bio_card.primal_surge_cost.1))
                         .strong()
                         .color(Color32::WHITE),
                 )
@@ -350,7 +363,7 @@ Doctrine: {}
 Primal Surge: {}", bio_card.title, bio_card.primal_surge_effect))
                     .clicked()
                 {
-                    session.execute_biotype_primal_surge(viewing_team, vfx, audio);
+                    session.execute_biotype_primal_surge(viewing_team, true, vfx, audio);
                 }
 
                 if is_pure {
@@ -362,7 +375,7 @@ Primal Surge: {}", bio_card.title, bio_card.primal_surge_effect))
                     .on_hover_text(&bio_card.pure_doctrine_effect);
                 } else if let Some(bio2) = team_deck.secondary_biotype_card() {
                     ui.label(
-                        RichText::new(format!("🧬 HYBRID: {} ({})", bio2.title, bio2.hybrid_doctrine_name))
+                        RichText::new(format!("✦ HYBRID: {} ({})", bio2.title, bio2.hybrid_doctrine_name))
                             .small()
                             .color(Color32::from_rgb(240, 180, 120)),
                     )
@@ -395,6 +408,16 @@ Primal Surge: {}", bio_card.title, bio_card.primal_surge_effect))
                         session.mode = CommandMode::Inspect;
                     }
                 }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("ℹ About").clicked() {
+                        actions.open_about = true;
+                    }
+                    ui.label(
+                        RichText::new("Copyright CRV Science Network")
+                            .small()
+                            .color(Color32::from_rgb(156, 186, 200)),
+                    );
+                });
             });
             ui.add_space(4.0);
 
@@ -542,24 +565,33 @@ Primal Surge: {}", bio_card.title, bio_card.primal_surge_effect))
                         let def = &session.entities[hov_idx];
                         let viewer_t = session.viewing_team();
                         if att.team_id == viewer_t && def.team_id != viewer_t && def.team_id != 0 {
-                            let dist = sel.unsigned_distance_to(hov) as u8;
-                            let ctx_preview = CombatContext {
-                                hex_distance: dist,
-                                is_melee: dist == 1 && att.card.ranged_distance == 0,
-                                attacker_can_fly: att.card.can_fly,
-                                attacker_stealth_ambush: att.card.stealth,
-                                attacker_adjacent_commander: false,
-                                attacker_pack_tactics_bonus: false,
-                                defender_in_rough_cover: false,
+                            let prev = session.preview_combat_odds(sel_idx, hov_idx);
+                            let mut mods = Vec::new();
+                            if prev.ctx.attacker_adjacent_commander {
+                                mods.push("Cmdr");
+                            }
+                            if prev.ctx.attacker_pack_tactics_bonus {
+                                mods.push(if prev.pure_mammal_apex { "ApexPack" } else { "Pack" });
+                            }
+                            if prev.ctx.defender_in_rough_cover {
+                                mods.push("Cover");
+                            }
+                            if prev.aegis_bastion {
+                                mods.push("Aegis");
+                            }
+                            let mod_suffix = if mods.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" [{}]", mods.join(","))
                             };
-                            let req = required_ranged_hit_roll(&def.unit, ctx_preview);
-                            let d_str = (i16::from(att.unit.current_str_hp)
-                                - i16::from(def.unit.current_str_hp))
-                            .clamp(-2, 3);
                             ui.label(
                                 RichText::new(format!(
-                                    "🎯 Odds @ {} hex: Hit {}+ on D6 | ΔSTR {:+} vs Armor {}",
-                                    dist, req, d_str, def.unit.current_armor
+                                    "🎯 Odds @ {} hex: {} | ΔSTR {:+} vs Armor {}{}",
+                                    prev.dist,
+                                    prev.hit_summary,
+                                    prev.delta_str,
+                                    prev.effective_armor,
+                                    mod_suffix
                                 ))
                                 .small()
                                 .strong()
@@ -624,7 +656,7 @@ Primal Surge: {}", bio_card.title, bio_card.primal_surge_effect))
                     } else if ent.team_id == session.viewing_team() && session.can_local_player_act() {
                         ui.add_space(4.0);
                         ui.horizontal_wrapped(|ui| {
-                            if ent.card.movement > 0 && ui.button("🥾 Move").clicked() {
+                            if ent.card.movement > 0 && ui.button("▶ Move").clicked() {
                                 session.mode = CommandMode::MoveSelectedUnit;
                             }
                             if (ent.card.ranged_distance > 0 || ent.card.melee_range > 0)

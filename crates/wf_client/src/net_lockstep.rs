@@ -57,9 +57,21 @@ pub enum LockstepCommand {
         team_id: u8,
         unit_hex: Hex,
     },
+    FactionCommand {
+        team_id: u8,
+    },
+    PrimalSurge {
+        team_id: u8,
+    },
     EndTurn {
         team_id: u8,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StampedLockstepCommand {
+    pub cmd: LockstepCommand,
+    pub post_state_hash: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +85,10 @@ pub enum NetPacket {
     ClientJoinDeck {
         client_deck: DeckList,
     },
-    Command(LockstepCommand),
+    Command {
+        cmd: LockstepCommand,
+        post_state_hash: u64,
+    },
     DisconnectNotice,
 }
 
@@ -388,24 +403,63 @@ mod tests {
             host_deck: dummy_deck,
             fog_enabled: true,
         });
-        client.send(NetPacket::Command(LockstepCommand::EndTurn { team_id: 2 }));
+        client.send(NetPacket::Command {
+            cmd: LockstepCommand::EndTurn { team_id: 2 },
+            post_state_hash: 0xDEAD_BEEF_CAFE_0001,
+        });
+        host.send(NetPacket::Command {
+            cmd: LockstepCommand::FactionCommand { team_id: 1 },
+            post_state_hash: 0xDEAD_BEEF_CAFE_0002,
+        });
+        client.send(NetPacket::Command {
+            cmd: LockstepCommand::PrimalSurge { team_id: 2 },
+            post_state_hash: 0xDEAD_BEEF_CAFE_0003,
+        });
 
         let mut client_got_init = false;
-        let mut host_got_cmd = false;
-        for _ in 0..50 {
+        let mut client_got_fac = false;
+        let mut host_got_end = false;
+        let mut host_got_surge = false;
+        for _ in 0..60 {
             for ev in client.poll_events() {
-                if let NetEvent::PacketReceived(NetPacket::MatchInit { seed, .. }) = ev {
-                    assert_eq!(seed, 0x2072_CAFE);
-                    client_got_init = true;
+                match ev {
+                    NetEvent::PacketReceived(NetPacket::MatchInit { seed, .. }) => {
+                        assert_eq!(seed, 0x2072_CAFE);
+                        client_got_init = true;
+                    }
+                    NetEvent::PacketReceived(NetPacket::Command {
+                        cmd: LockstepCommand::FactionCommand { team_id },
+                        post_state_hash,
+                    }) => {
+                        assert_eq!(team_id, 1);
+                        assert_eq!(post_state_hash, 0xDEAD_BEEF_CAFE_0002);
+                        client_got_fac = true;
+                    }
+                    _ => {}
                 }
             }
             for ev in host.poll_events() {
-                if let NetEvent::PacketReceived(NetPacket::Command(LockstepCommand::EndTurn { team_id })) = ev {
-                    assert_eq!(team_id, 2);
-                    host_got_cmd = true;
+                match ev {
+                    NetEvent::PacketReceived(NetPacket::Command {
+                        cmd: LockstepCommand::EndTurn { team_id },
+                        post_state_hash,
+                    }) => {
+                        assert_eq!(team_id, 2);
+                        assert_eq!(post_state_hash, 0xDEAD_BEEF_CAFE_0001);
+                        host_got_end = true;
+                    }
+                    NetEvent::PacketReceived(NetPacket::Command {
+                        cmd: LockstepCommand::PrimalSurge { team_id },
+                        post_state_hash,
+                    }) => {
+                        assert_eq!(team_id, 2);
+                        assert_eq!(post_state_hash, 0xDEAD_BEEF_CAFE_0003);
+                        host_got_surge = true;
+                    }
+                    _ => {}
                 }
             }
-            if client_got_init && host_got_cmd {
+            if client_got_init && client_got_fac && host_got_end && host_got_surge {
                 break;
             }
             thread::sleep(Duration::from_millis(20));
@@ -414,6 +468,8 @@ mod tests {
         host.disconnect();
         client.disconnect();
         assert!(client_got_init, "Client did not receive MatchInit over TCP");
-        assert!(host_got_cmd, "Host did not receive LockstepCommand over TCP");
+        assert!(client_got_fac, "Client did not receive FactionCommand over TCP");
+        assert!(host_got_end, "Host did not receive EndTurn over TCP");
+        assert!(host_got_surge, "Host did not receive PrimalSurge over TCP");
     }
 }

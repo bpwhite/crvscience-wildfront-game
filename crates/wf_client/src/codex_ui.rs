@@ -69,7 +69,7 @@ impl CodexOverlay {
                     for (tab, label) in [
                         (CodexTab::LogisticsAndEconomy, "⚙ Logistics & Nodes"),
                         (CodexTab::CombatAndFogOfWar, "🎲 D6 Combat & Stealth"),
-                        (CodexTab::FactionDoctrines, "🧬 10 Faction Doctrines"),
+                        (CodexTab::FactionDoctrines, "✦ 10 Faction Doctrines"),
                         (CodexTab::ControlsAndMultiplayer, "⌨ Hotkeys & TCP 1v1"),
                     ] {
                         if ui.selectable_label(self.active_tab == tab, RichText::new(label).strong()).clicked() {

@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 // Copyright (C) 2026 CRV Science Network (https://crvscience.com)
 //
 // This program is free software: you can redistribute it and/or modify
@@ -43,10 +45,12 @@ mod world_overlays;
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::Instant;
 use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
 use glam::{Mat4, Vec3};
 use hexx::Hex;
 use winit::application::ApplicationHandler;
@@ -69,6 +73,8 @@ const EMBEDDED_STARTER_DECK_1_RON: &str =
     include_str!("../../../assets/compiled/starter_deck_mammal_reptile.ron");
 const EMBEDDED_VOX_64TREE_ZLIB: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/precompiled_vox_64tree.bin"));
+const EMBEDDED_WINDOW_ICON_RGBA_64: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/wildfront_icon_64.rgba"));
 use crate::audio::SpatialAudioEngine;
 use crate::codex_ui::CodexOverlay;
 use crate::deck_builder_ui::DeckBuilderScreen;
@@ -79,7 +85,6 @@ use crate::db_manager_ui::DatabaseManagerStudio;
 use crate::map_editor_ui::MapEditorStudio;
 use crate::replay_ui::ReplayTheaterStudio;
 use crate::net_lockstep::{NetEvent, NetLockstepManager, NetPacket};
-use std::path::Path;
 use crate::audio::SfxCue;
 use crate::game_session::{ClientMatchState, DEFAULT_QUICKSAVE_PATH};
 use crate::world_overlays::draw_world_space_overlays;
@@ -211,6 +216,79 @@ struct WildfrontApp {
     egui_state: Option<egui_winit::State>,
     engine: Option<VoxelRenderEngine>,
     last_frame_instant: Instant,
+    show_about: bool,
+}
+
+fn load_window_icon() -> Option<winit::window::Icon> {
+    winit::window::Icon::from_rgba(EMBEDDED_WINDOW_ICON_RGBA_64.to_vec(), 64, 64).ok()
+}
+
+fn draw_about_modal(root_ui: &mut egui::Ui, show_about: &mut bool) {
+    if !*show_about {
+        return;
+    }
+    let mut open = *show_about;
+    egui::Window::new("ℹ About WildFront BattleGrounds")
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .collapsible(false)
+        .resizable(false)
+        .order(egui::Order::Foreground)
+        .frame(
+            egui::Frame::NONE
+                .fill(egui::Color32::from_rgba_unmultiplied(12, 20, 28, 250))
+                .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(76, 212, 236)))
+                .corner_radius(10)
+                .inner_margin(egui::Margin::same(18)),
+        )
+        .show(root_ui.ctx(), |ui| {
+            ui.set_min_width(420.0);
+            ui.set_max_width(460.0);
+            ui.label(
+                egui::RichText::new("WildFront BattleGrounds")
+                    .size(18.0)
+                    .strong()
+                    .color(egui::Color32::WHITE),
+            );
+            ui.label(
+                egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                    .strong()
+                    .color(egui::Color32::from_rgb(112, 232, 248)),
+            );
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(
+                    "GPU-raymarched Sparse 64-Tree voxel hex tactical strategy client \
+                     with 2-ply AI, TCP 1v1 lockstep multiplayer, 3D-print .STL studio, \
+                     and live scenario map editor.",
+                )
+                .small()
+                .color(egui::Color32::from_rgb(192, 218, 230)),
+            );
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("Copyright CRV Science Network")
+                    .strong()
+                    .color(egui::Color32::from_rgb(232, 244, 248)),
+            );
+            ui.label(
+                egui::RichText::new("License: GNU General Public License v3.0 or later (GPL-3.0-or-later)")
+                    .small()
+                    .color(egui::Color32::from_rgb(168, 206, 220)),
+            );
+            ui.add_space(6.0);
+            ui.hyperlink_to("CRV Science Network — https://crvscience.com", "https://crvscience.com");
+            ui.hyperlink_to("CRV Science Apps — https://crvscience.com/apps", "https://crvscience.com/apps");
+            ui.add_space(10.0);
+            if ui.button("Close").clicked() {
+                *show_about = false;
+            }
+        });
+    if !open {
+        *show_about = false;
+    }
 }
 
 impl WildfrontApp {
@@ -246,7 +324,8 @@ impl ApplicationHandler for WildfrontApp {
                 "Wildfront Battlegrounds — {} [Seed 0x{:08X}]",
                 self.session.scenario.title, self.active_seed
             ))
-            .with_inner_size(PhysicalSize::new(1480, 920));
+            .with_inner_size(PhysicalSize::new(1480, 920))
+            .with_window_icon(load_window_icon());
         let window = Arc::new(
             event_loop
                 .create_window(attrs)
@@ -572,7 +651,10 @@ impl ApplicationHandler for WildfrontApp {
                 // Flush any local lockstep commands to remote TCP peer
                 for out_cmd in self.session.outbound_net_cmds.drain(..) {
                     if self.net.is_online() {
-                        self.net.send(NetPacket::Command(out_cmd));
+                        self.net.send(NetPacket::Command {
+                            cmd: out_cmd.cmd,
+                            post_state_hash: out_cmd.post_state_hash,
+                        });
                     }
                 }
                 // Poll inbound TCP lockstep events
@@ -617,12 +699,18 @@ impl ApplicationHandler for WildfrontApp {
                             self.main_menu.is_open = false;
                             self.session.push_toast("🌐 Synced TCP Lockstep Match as Player 1 (Host)!");
                         }
-                        NetEvent::PacketReceived(NetPacket::Command(remote_cmd)) => {
-                            self.session.apply_remote_lockstep_command(
+                        NetEvent::PacketReceived(NetPacket::Command {
+                            cmd: remote_cmd,
+                            post_state_hash,
+                        }) => {
+                            if let Err(err) = self.session.apply_remote_lockstep_command(
                                 remote_cmd,
+                                post_state_hash,
                                 &mut self.vfx,
                                 &mut self.audio,
-                            );
+                            ) {
+                                self.session.push_toast(format!("⚠ {err}"));
+                            }
                         }
                         NetEvent::PacketReceived(NetPacket::DisconnectNotice)
                         | NetEvent::ErrorOrClosed(_) => {
@@ -729,6 +817,7 @@ impl ApplicationHandler for WildfrontApp {
                         ) {
                             launched_custom_deck = Some(new_deck);
                         }
+                        draw_about_modal(root_ui, &mut self.show_about);
                     });
                     let window = eng.window.as_ref().expect("windowed mode");
                     egui_state.handle_platform_output(window, full_output.platform_output);
@@ -751,6 +840,9 @@ impl ApplicationHandler for WildfrontApp {
                 }
                 if hud_actions.toggle_codex || menu_actions.open_codex {
                     self.codex.is_open = !self.codex.is_open;
+                }
+                if hud_actions.open_about || menu_actions.open_about {
+                    self.show_about = true;
                 }
                 if hud_actions.toggle_map_editor || menu_actions.open_map_editor {
                     self.map_editor.is_open = !self.map_editor.is_open;
@@ -858,7 +950,12 @@ impl ApplicationHandler for WildfrontApp {
                 }
                 // Also flush any outbound net cmds generated by UI buttons (e.g., Rest or End Turn)
                 for out_cmd in self.session.outbound_net_cmds.drain(..) {
-                    self.net.send(NetPacket::Command(out_cmd));
+                    if self.net.is_online() {
+                        self.net.send(NetPacket::Command {
+                            cmd: out_cmd.cmd,
+                            post_state_hash: out_cmd.post_state_hash,
+                        });
+                    }
                 }
                 if hud_actions.toggle_overlays {
                     self.camera.show_overlays = !self.camera.show_overlays;
@@ -1105,27 +1202,20 @@ fn write_rgba_png(
             std::fs::create_dir_all(parent)?;
         }
     }
-    let mut raw = Vec::with_capacity((row_bytes + 1) * height as usize);
+
+    // PNG Sub scanline filter (type 1) + DEFLATE zlib compression via flate2
+    let mut filtered = Vec::with_capacity((row_bytes + 1) * height as usize);
     for row in rgba.chunks_exact(row_bytes) {
-        raw.push(0);
-        raw.extend_from_slice(row);
+        filtered.push(1);
+        for (i, &byte) in row.iter().enumerate() {
+            let left = if i >= 4 { row[i - 4] } else { 0 };
+            filtered.push(byte.wrapping_sub(left));
+        }
     }
-    let (mut s1, mut s2) = (1u32, 0u32);
-    for &b in &raw {
-        s1 = (s1 + b as u32) % 65521;
-        s2 = (s2 + s1) % 65521;
-    }
-    let mut zlib = Vec::with_capacity(raw.len() + (raw.len() / 65535 + 1) * 5 + 6);
-    zlib.extend_from_slice(&[0x78, 0x01]);
-    let n_chunks = raw.len().div_ceil(65535).max(1);
-    for (idx, chunk) in raw.chunks(65535).enumerate() {
-        zlib.push(if idx + 1 == n_chunks { 0x01 } else { 0x00 });
-        let len = chunk.len() as u16;
-        zlib.extend_from_slice(&len.to_le_bytes());
-        zlib.extend_from_slice(&(!len).to_le_bytes());
-        zlib.extend_from_slice(chunk);
-    }
-    zlib.extend_from_slice(&((s2 << 16) | s1).to_be_bytes());
+
+    let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+    enc.write_all(&filtered)?;
+    let zlib = enc.finish()?;
 
     let push_chunk = |out: &mut Vec<u8>, tag: &[u8; 4], data: &[u8]| {
         out.extend_from_slice(&(data.len() as u32).to_be_bytes());
@@ -1435,20 +1525,52 @@ fn render_headless_screenshot(app: &mut WildfrontApp, out_path: &std::path::Path
     staging.unmap();
 }
 
-fn parse_screenshot_args() -> (Option<std::path::PathBuf>, u8) {
+#[cfg(windows)]
+fn attach_parent_console() {
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn AttachConsole(dw_process_id: u32) -> i32;
+    }
+    unsafe {
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CliAction {
+    RunGui,
+    Help,
+    Version,
+    Screenshot {
+        out_path: std::path::PathBuf,
+        view: u8,
+    },
+}
+
+fn parse_cli_args_from<I>(args: I) -> CliAction
+where
+    I: IntoIterator<Item = std::ffi::OsString>,
+{
     let mut out_path: Option<std::path::PathBuf> = None;
     let mut view: u8 = 1;
-    let mut args = std::env::args_os().skip(1);
-    while let Some(arg) = args.next() {
+    let mut iter = args.into_iter().skip(1);
+    while let Some(arg) = iter.next() {
+        if arg == "--help" || arg == "-h" {
+            return CliAction::Help;
+        }
+        if arg == "--version" || arg == "-V" {
+            return CliAction::Version;
+        }
         if arg == "--screenshot" {
-            let val = args
+            let val = iter
                 .next()
                 .expect("--screenshot requires an output file path argument");
             out_path = Some(std::path::PathBuf::from(val));
             continue;
         }
         if arg == "--screenshot-view" {
-            let val = args
+            let val = iter
                 .next()
                 .expect("--screenshot-view requires a numeric view index (1..=3)");
             if let Some(s) = val.to_str() {
@@ -1468,12 +1590,51 @@ fn parse_screenshot_args() -> (Option<std::path::PathBuf>, u8) {
             }
         }
     }
-    (out_path, view)
+    if let Some(out_path) = out_path {
+        CliAction::Screenshot { out_path, view }
+    } else {
+        CliAction::RunGui
+    }
+}
+
+fn print_cli_help() {
+    println!("WildFront BattleGrounds (wf_client v{})", env!("CARGO_PKG_VERSION"));
+    println!("Copyright CRV Science Network (https://crvscience.com) — GPL-3.0-or-later");
+    println!();
+    println!("USAGE:");
+    println!("  wf_client [OPTIONS]");
+    println!();
+    println!("OPTIONS:");
+    println!("  -h, --help                     Print this help message and exit");
+    println!("  -V, --version                  Print version information and exit");
+    println!("  --screenshot <PATH>            Render headless 1600x1000 wgpu PNG and exit");
+    println!("  --screenshot-view <1|2|3>      Select view (1: Arena, 2: Deck Builder, 3: Map Studio)");
 }
 
 fn main() {
+    #[cfg(windows)]
+    if std::env::args_os().len() > 1 {
+        attach_parent_console();
+    }
+
+    let cli_action = parse_cli_args_from(std::env::args_os());
+    match &cli_action {
+        CliAction::Help => {
+            print_cli_help();
+            return;
+        }
+        CliAction::Version => {
+            println!(
+                "wf_client {} (WildFront BattleGrounds — CRV Science Network, GPL-3.0-or-later)",
+                env!("CARGO_PKG_VERSION")
+            );
+            return;
+        }
+        _ => {}
+    }
+
     println!("=================================================================");
-    println!("  WILDRONT BATTLEGROUNDS — PLAYABLE VOXEL & EGUI CLIENT (v3.4.1 — Tile-Culled 64-Tree Raymarcher, 2-Ply AI, F3 Map Studio & F4 Replay Theater)     ");
+    println!("  WILDFRONT BATTLEGROUNDS — PLAYABLE VOXEL & EGUI CLIENT (v{} — Tile-Culled 64-Tree Raymarcher, 2-Ply AI, F3 Map Studio & F4 Replay Theater)", env!("CARGO_PKG_VERSION"));
     println!("=================================================================");
     println!("{}\n", WILDFRONT_THEME_2072);
 
@@ -1493,7 +1654,6 @@ fn main() {
     let initial_builder_deck = decks[0].clone();
     let session = ClientMatchState::new(roster, decks, ScenarioId::EmergenceSkirmish, seed, 0);
 
-    let (screenshot_out, screenshot_view) = parse_screenshot_args();
     let mut app = WildfrontApp {
         vox_gpu,
         handles,
@@ -1517,13 +1677,72 @@ fn main() {
         egui_state: None,
         engine: None,
         last_frame_instant: Instant::now(),
+        show_about: false,
     };
     crate::paths::install_ui_fonts(&app.egui_ctx);
-    if let Some(out_path) = screenshot_out {
-        render_headless_screenshot(&mut app, &out_path, screenshot_view);
+    if let CliAction::Screenshot { out_path, view } = cli_action {
+        render_headless_screenshot(&mut app, &out_path, view);
         return;
     }
 
     let event_loop = EventLoop::new().expect("Failed to initialize winit EventLoop");
     event_loop.run_app(&mut app).expect("EventLoop terminated with error");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    #[test]
+    fn cli_parser_supports_help_version_and_screenshot_views() {
+        assert_eq!(
+            parse_cli_args_from([OsString::from("wf_client"), OsString::from("--help")]),
+            CliAction::Help
+        );
+        assert_eq!(
+            parse_cli_args_from([OsString::from("wf_client"), OsString::from("--version")]),
+            CliAction::Version
+        );
+        assert_eq!(
+            parse_cli_args_from([
+                OsString::from("wf_client"),
+                OsString::from("--screenshot"),
+                OsString::from("out.png"),
+                OsString::from("--screenshot-view"),
+                OsString::from("3"),
+            ]),
+            CliAction::Screenshot {
+                out_path: std::path::PathBuf::from("out.png"),
+                view: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn write_rgba_png_outputs_deflate_compressed_valid_png() {
+        let w = 256u32;
+        let h = 128u32;
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                rgba.push(((x * 2) % 256) as u8);
+                rgba.push(((y * 2) % 256) as u8);
+                rgba.push(42);
+                rgba.push(255);
+            }
+        }
+        let tmp = std::env::temp_dir().join("wf_deflate_png_test.png");
+        write_rgba_png(&tmp, w, h, &rgba).expect("write_rgba_png failed");
+        let bytes = std::fs::read(&tmp).expect("read png failed");
+        let _ = std::fs::remove_file(&tmp);
+
+        assert_eq!(&bytes[..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+        assert!(
+            bytes.len() < rgba.len() / 4,
+            "Expected DEFLATE PNG ({} bytes) to be much smaller than raw RGBA ({} bytes)",
+            bytes.len(),
+            rgba.len()
+        );
+    }
 }

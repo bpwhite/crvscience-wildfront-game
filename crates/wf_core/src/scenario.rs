@@ -19,7 +19,10 @@
 use hexx::Hex;
 use serde::{Deserialize, Serialize};
 use crate::hex_map::{BattleHexMap, Biome, Morphology};
-use crate::mapgen::{default_base_anchors, generate_procedural_map, MapGenConfig, SymmetryMode};
+use crate::mapgen::{
+    default_base_anchors, ensure_base_connectivity, generate_procedural_map, MapGenConfig,
+    SymmetryMode,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ScenarioId {
@@ -180,6 +183,12 @@ pub fn generate_scenario(scenario_id: ScenarioId, seed: u64) -> GeneratedScenari
         }
     }
 
+    map.recompute_cliff_masks();
+    ensure_base_connectivity(&mut map, p1_hq, p2_hq, false);
+    for &(ox, oy) in &objective_hexes {
+        ensure_base_connectivity(&mut map, p1_hq, Hex::new(ox, oy), false);
+    }
+
     // Pick valid passable neighbor slots around P1 and P2 Command Centers for starting units
     let p1_nbs: Vec<Hex> = p1_hq
         .all_neighbors()
@@ -319,5 +328,60 @@ pub fn generate_scenario(scenario_id: ScenarioId, seed: u64) -> GeneratedScenari
         objective_hexes,
         placements,
         map,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mapgen::has_traversal_path;
+
+    #[test]
+    fn bio_river_convoy_and_all_scenarios_reach_all_objectives_and_sync_cliffs() {
+        let mut seeds = vec![0x2072_0814u64];
+        for i in 1u64..20 {
+            seeds.push(0x9E37_79B9_7F4A_7C15u64.wrapping_mul(i));
+        }
+
+        for scenario_id in ScenarioId::ALL {
+            for &seed in &seeds {
+                let scen = generate_scenario(scenario_id, seed);
+                let p1_hq = scen
+                    .placements
+                    .iter()
+                    .find(|p| p.team_id == 1 && p.card_key.contains("Command Center"))
+                    .map(|p| Hex::new(p.q, p.r))
+                    .expect("Team 1 Command Center must exist");
+                let p2_hq = scen
+                    .placements
+                    .iter()
+                    .find(|p| p.team_id == 2 && p.card_key.contains("Command Center"))
+                    .map(|p| Hex::new(p.q, p.r))
+                    .expect("Team 2 Command Center must exist");
+
+                assert!(
+                    has_traversal_path(&scen.map, p1_hq, p2_hq, 0),
+                    "{scenario_id:?} seed {seed:#x}: P1 HQ {p1_hq:?} cannot reach P2 HQ {p2_hq:?} on ground"
+                );
+                for &(ox, oy) in &scen.objective_hexes {
+                    let oh = Hex::new(ox, oy);
+                    assert!(
+                        has_traversal_path(&scen.map, p1_hq, oh, 0),
+                        "{scenario_id:?} seed {seed:#x}: objective {oh:?} unreachable on ground from {p1_hq:?}"
+                    );
+                }
+
+                // Verify cliff_edges mask matches current tile elevations after objective stamping
+                let mut recomputed = scen.map.clone();
+                recomputed.recompute_cliff_masks();
+                for (h, tile) in &scen.map.tiles {
+                    assert_eq!(
+                        tile.cliff_edges,
+                        recomputed.tiles[h].cliff_edges,
+                        "{scenario_id:?} seed {seed:#x}: stale cliff_edges at {h:?}"
+                    );
+                }
+            }
+        }
     }
 }

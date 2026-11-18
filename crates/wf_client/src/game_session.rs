@@ -37,7 +37,7 @@ use wf_core::{OriginAllegiance,
     OrganismFaction, RosterManifest, ScenarioId, UnitCardDef, VictoryCondition,
 };
 use crate::audio::{SfxCue, SpatialAudioEngine};
-use crate::net_lockstep::LockstepCommand;
+use crate::net_lockstep::{LockstepCommand, StampedLockstepCommand};
 use crate::picking::hex_world_anchor;
 use crate::scene::axial_to_world_xz;
 use crate::vfx::VfxManager;
@@ -113,7 +113,7 @@ pub struct ClientMatchState {
     pub turn_number: u32,
     pub active_team: u8,
     pub online_local_team: Option<u8>,
-    pub outbound_net_cmds: Vec<LockstepCommand>,
+    pub outbound_net_cmds: Vec<StampedLockstepCommand>,
     pub hotseat_mode: bool,
     pub hotseat_handoff_pending: bool,
     pub fog_enabled: bool,
@@ -260,6 +260,133 @@ pub fn make_board_unit_for_deck(card: &UnitCardDef, deck: &DeckList) -> BoardUni
         }
     }
     u
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CombatOddsPreview {
+    pub dist: u8,
+    pub ctx: CombatContext,
+    pub required_d6: Option<u8>,
+    pub hit_summary: String,
+    pub delta_str: i16,
+    pub effective_armor: u8,
+    pub pure_mammal_apex: bool,
+    pub aegis_bastion: bool,
+}
+
+impl ClientMatchState {
+    /// Builds authoritative `CombatContext` from live board state (shared between combat resolution and HUD hover preview).
+    pub fn build_combat_context(&self, att_idx: usize, def_idx: usize) -> CombatContext {
+        let att = &self.entities[att_idx];
+        let def = &self.entities[def_idx];
+        let att_team = att.team_id;
+        let att_hex = att.hex;
+        let def_hex = def.hex;
+        let dist = att_hex.unsigned_distance_to(def_hex) as u8;
+        let is_laser = att.unit.is_laser;
+        let is_melee = (!def.card.can_fly || att.card.can_fly)
+            && dist <= att.card.melee_range
+            && (att.card.ranged_distance == 0 || (dist == 1 && !is_laser));
+
+        let adj_cmd = self.entities.iter().any(|e| {
+            e.team_id == att_team
+                && e.unit.current_str_hp > 0
+                && e.card.combat_class == CombatClass::Commander
+                && e.hex.unsigned_distance_to(att_hex) == 1
+        });
+        let pack_bonus = att.card.faction == OrganismFaction::Mammal
+            && self.entities.iter().any(|e| {
+                e.team_id == att_team
+                    && e.uid != att.uid
+                    && e.unit.current_str_hp > 0
+                    && e.card.faction == OrganismFaction::Mammal
+                    && e.hex.unsigned_distance_to(att_hex) == 1
+            });
+        let brush_bypass = matches!(
+            att.card.faction,
+            OrganismFaction::Arachnid | OrganismFaction::Insect
+        ) && dist <= 2;
+        let def_cover = self
+            .scenario
+            .map
+            .tiles
+            .get(&def_hex)
+            .map_or(false, |t| {
+                (t.morphology.grants_ranged_cover()
+                    && !(brush_bypass && t.morphology == Morphology::RoughCover))
+                    || (def.card.faction == OrganismFaction::Fish && t.morphology.is_water())
+            })
+            && !def.card.can_fly;
+
+        CombatContext {
+            hex_distance: dist,
+            is_melee,
+            attacker_can_fly: att.card.can_fly,
+            attacker_stealth_ambush: att.card.stealth,
+            attacker_adjacent_commander: adj_cmd,
+            attacker_pack_tactics_bonus: pack_bonus,
+            defender_in_rough_cover: def_cover,
+        }
+    }
+
+    /// Computes live hover hit-odds & damage modifier preview matching `execute_combat_pair` rules.
+    pub fn preview_combat_odds(&self, att_idx: usize, def_idx: usize) -> CombatOddsPreview {
+        let att = &self.entities[att_idx];
+        let def = &self.entities[def_idx];
+        let ctx = self.build_combat_context(att_idx, def_idx);
+        let dist = ctx.hex_distance;
+
+        let att_deck = &self.decks[(att.team_id.saturating_sub(1)).min(1) as usize];
+        let def_deck = &self.decks[(def.team_id.saturating_sub(1)).min(1) as usize];
+
+        let pure_mammal_apex = att_deck.is_pure_biotype()
+            && att_deck.primary_faction == OrganismFaction::Mammal
+            && ctx.attacker_pack_tactics_bonus;
+        let aegis_bastion = def_deck.faction == OriginAllegiance::Europe
+            && dist > 2
+            && matches!(
+                def.card.combat_class,
+                CombatClass::Heavy | CombatClass::Commander
+            );
+        let effective_armor = def
+            .unit
+            .current_armor
+            .saturating_add(u8::from(aegis_bastion));
+
+        let mut d_str =
+            (i16::from(att.unit.current_str_hp) - i16::from(def.unit.current_str_hp)).clamp(-2, 3);
+        if ctx.attacker_can_fly && d_str < 0 {
+            d_str = 0;
+        }
+
+        let (required_d6, hit_summary) = if def.unit.burrowed && !ctx.is_melee && dist >= 2 {
+            (None, "IMMUNE (Burrowed)".to_string())
+        } else if def.unit.fortified_stacks > 0 {
+            (
+                None,
+                format!("BLOCKED (Shield x{})", def.unit.fortified_stacks),
+            )
+        } else if ctx.is_melee {
+            (Some(1), "AUTO-HIT (Melee)".to_string())
+        } else {
+            let mut req = required_ranged_hit_roll(&def.unit, ctx);
+            if pure_mammal_apex {
+                req = req.saturating_sub(1).max(2);
+            }
+            (Some(req), format!("Hit {}+ on D6", req))
+        };
+
+        CombatOddsPreview {
+            dist,
+            ctx,
+            required_d6,
+            hit_summary,
+            delta_str: d_str,
+            effective_armor,
+            pure_mammal_apex,
+            aegis_bastion,
+        }
+    }
 }
 
 impl ClientMatchState {
@@ -516,6 +643,7 @@ impl ClientMatchState {
     fn reset_from_current_scenario(&mut self) {
         self.timeline_frames.clear();
         self.entities.clear();
+        self.next_uid = 1;
         self.graveyard.clear();
         self.ai_graveyard.clear();
         self.explored_hexes = [HashSet::new(), HashSet::new()];
@@ -571,8 +699,7 @@ impl ClientMatchState {
             self.ai_hand.push(extra_c);
         }
 
-        self.economy.home_base_munitions.clear();
-        self.economy.actions_remaining.clear();
+        self.economy = PlayerEconomy::default();
         self.economy.home_base_munitions.insert(1, 5);
         self.economy.home_base_munitions.insert(2, 8);
         self.start_team_turn(1);
@@ -1259,13 +1386,6 @@ impl ClientMatchState {
                         ));
                         return;
                     }
-                    if self.online_local_team.is_some() {
-                        self.outbound_net_cmds.push(LockstepCommand::DeployCard {
-                            team_id: actor,
-                            hand_idx,
-                            hex: clicked_hex,
-                        });
-                    }
                     *home_mun -= deploy_cost;
                     *self.economy.actions_remaining.entry(actor).or_insert(1) -= 1;
                     if actor == 2 {
@@ -1344,6 +1464,11 @@ impl ClientMatchState {
                     }
                     self.selected_hex = Some(clicked_hex);
                     self.mode = CommandMode::Inspect;
+                    self.emit_lockstep_cmd(LockstepCommand::DeployCard {
+                        team_id: actor,
+                        hand_idx,
+                        hex: clicked_hex,
+                    });
                     return;
                 }
                 self.mode = CommandMode::Inspect;
@@ -1354,13 +1479,6 @@ impl ClientMatchState {
                         if actions_left > 0
                             && self.valid_move_hexes_for_team(ent_idx, actor).contains(&clicked_hex)
                         {
-                            if self.online_local_team.is_some() {
-                                self.outbound_net_cmds.push(LockstepCommand::MoveUnit {
-                                    team_id: actor,
-                                    from_hex: sel,
-                                    to_hex: clicked_hex,
-                                });
-                            }
                             let from_w = hex_world_anchor(&self.scenario.map, sel, 0.2);
                             let to_w = hex_world_anchor(&self.scenario.map, clicked_hex, 0.2);
                             let uid = self.entities[ent_idx].uid;
@@ -1380,6 +1498,11 @@ impl ClientMatchState {
                             ));
                             self.selected_hex = Some(clicked_hex);
                             self.mode = CommandMode::Inspect;
+                            self.emit_lockstep_cmd(LockstepCommand::MoveUnit {
+                                team_id: actor,
+                                from_hex: sel,
+                                to_hex: clicked_hex,
+                            });
                             return;
                         }
                     }
@@ -1392,15 +1515,13 @@ impl ClientMatchState {
                         (self.entity_at(sel), self.entity_at(clicked_hex))
                     {
                         if actions_left > 0 && self.valid_attack_hexes(att_idx).contains(&clicked_hex) {
-                            if self.online_local_team.is_some() {
-                                self.outbound_net_cmds.push(LockstepCommand::AttackUnit {
-                                    team_id: actor,
-                                    attacker_hex: sel,
-                                    defender_hex: clicked_hex,
-                                });
-                            }
                             self.execute_combat_pair(att_idx, def_idx, vfx, audio);
                             self.mode = CommandMode::Inspect;
+                            self.emit_lockstep_cmd(LockstepCommand::AttackUnit {
+                                team_id: actor,
+                                attacker_hex: sel,
+                                defender_hex: clicked_hex,
+                            });
                             return;
                         }
                     }
@@ -1413,15 +1534,13 @@ impl ClientMatchState {
                         if actions_left > 0
                             && self.valid_ability_hexes(ent_idx).contains(&clicked_hex)
                         {
-                            if self.online_local_team.is_some() {
-                                self.outbound_net_cmds.push(LockstepCommand::CastAbility {
-                                    team_id: actor,
-                                    caster_hex: sel,
-                                    target_hex: clicked_hex,
-                                });
-                            }
                             self.execute_unit_ability(ent_idx, clicked_hex, vfx, audio);
                             self.mode = CommandMode::Inspect;
+                            self.emit_lockstep_cmd(LockstepCommand::CastAbility {
+                                team_id: actor,
+                                caster_hex: sel,
+                                target_hex: clicked_hex,
+                            });
                             return;
                         }
                     }
@@ -1438,6 +1557,7 @@ impl ClientMatchState {
     pub fn execute_faction_command_ability(
         &mut self,
         team_id: u8,
+        emit_net: bool,
         vfx: &mut VfxManager,
         audio: &mut SpatialAudioEngine,
     ) -> bool {
@@ -1470,15 +1590,15 @@ impl ClientMatchState {
                         ent.unit.current_str_hp = (ent.unit.current_str_hp + 2).min(ent.unit.max_str_hp);
                         let w_pos = hex_world_anchor(&self.scenario.map, ent.hex, 0.4);
                         vfx.spawn_bio_ability_ring(w_pos, [0.15, 0.85, 0.95]);
-                        vfx.spawn_popup(w_pos, "🇦🇺 NANITE SURGE", format!("{}: +2 STR", ent.card.unit_name), [112, 232, 248]);
+                        vfx.spawn_popup(w_pos, "[AU] NANITE SURGE", format!("{}: +2 STR", ent.card.unit_name), [112, 232, 248]);
                         audio.play_spatial(SfxCue::BioHealChime, w_pos);
-                        self.combat_log.push(format!("🇦🇺 Australia Nanite Surge repaired +2 STR to {}!", ent.card.unit_name));
+                        self.combat_log.push(format!("[AU] Australia Nanite Surge repaired +2 STR to {}!", ent.card.unit_name));
                         repaired = true;
                         break;
                     }
                 }
                 if !repaired {
-                    self.combat_log.push("🇦🇺 Australia Nanite Surge activated: field units are already optimal!".into());
+                    self.combat_log.push("[AU] Australia Nanite Surge activated: field units are already optimal!".into());
                 }
             }
             OriginAllegiance::Africa => {
@@ -1498,13 +1618,13 @@ impl ClientMatchState {
                     }
                     let w_pos = hex_world_anchor(&self.scenario.map, pivot_hex, 0.4);
                     vfx.spawn_bio_ability_ring(w_pos, [1.0, 0.85, 0.15]);
-                    vfx.spawn_popup(w_pos, "🌍 SOLAR FLARE BURST", format!("Blinded & Locked {} foes", hit_cnt), [255, 210, 60]);
+                    vfx.spawn_popup(w_pos, "[AF] SOLAR FLARE BURST", format!("Blinded & Locked {} foes", hit_cnt), [255, 210, 60]);
                     audio.play_spatial(SfxCue::LaserPulse, w_pos);
-                    self.combat_log.push(format!("🌍 Africa Solar Flare Burst blinded & locked {} enemies in Radius 1!", hit_cnt));
+                    self.combat_log.push(format!("[AF] Africa Solar Flare Burst blinded & locked {} enemies in Radius 1!", hit_cnt));
                     target_found = true;
                 }
                 if !target_found {
-                    self.combat_log.push("🌍 Africa Solar Flare Burst activated, no targets in range.".into());
+                    self.combat_log.push("[AF] Africa Solar Flare Burst activated, no targets in range.".into());
                 }
             }
             OriginAllegiance::Asia => {
@@ -1530,9 +1650,9 @@ impl ClientMatchState {
                     }
                 }
                 vfx.spawn_bio_ability_ring(anchor_w, [0.35, 0.75, 1.0]);
-                vfx.spawn_popup(anchor_w, "🌏 ORBITAL DRONE SWEEP", format!("Locked {} + Drone Shield/Ammo", count), [120, 220, 255]);
+                vfx.spawn_popup(anchor_w, "[AS] ORBITAL DRONE SWEEP", format!("Locked {} + Drone Shield/Ammo", count), [120, 220, 255]);
                 audio.play_spatial(SfxCue::VenomSnare, anchor_w);
-                self.combat_log.push(format!("🌏 Asia Orbital Drone Sweep locked {} foes and shielded/resupplied lead unit!", count));
+                self.combat_log.push(format!("[AS] Asia Orbital Drone Sweep locked {} foes and shielded/resupplied lead unit!", count));
             }
             OriginAllegiance::Europe => {
                 let mut buffed = 0;
@@ -1541,13 +1661,13 @@ impl ClientMatchState {
                         ent.unit.fortified_stacks = (ent.unit.fortified_stacks + 1).min(3);
                         let w_pos = hex_world_anchor(&self.scenario.map, ent.hex, 0.4);
                         vfx.spawn_bio_ability_ring(w_pos, [0.95, 0.75, 0.25]);
-                        vfx.spawn_popup(w_pos, "🇪🇺 BASTION PROTOCOL", "+1 Fortified Shield", [248, 200, 60]);
+                        vfx.spawn_popup(w_pos, "[EU] BASTION PROTOCOL", "+1 Fortified Shield", [248, 200, 60]);
                         buffed += 1;
                         if buffed >= 1 { break; }
                     }
                 }
                 audio.play_spatial(SfxCue::BioHealChime, anchor_w);
-                self.combat_log.push(format!("🇪🇺 Europe Bastion Protocol granted +1 Fortified shield to {} frontliners!", buffed));
+                self.combat_log.push(format!("[EU] Europe Bastion Protocol granted +1 Fortified shield to {} frontliners!", buffed));
             }
             OriginAllegiance::NorthAmerica => {
                 let enemy_team = if team_id == 1 { 2 } else { 1 };
@@ -1567,9 +1687,9 @@ impl ClientMatchState {
                     }
                 }
                 vfx.spawn_bio_ability_ring(anchor_w, [0.25, 0.55, 1.0]);
-                vfx.spawn_popup(anchor_w, "🇺🇸 EMP & AEGIS PULSE", "Stripped Shields + Aegis Repair", [80, 180, 255]);
+                vfx.spawn_popup(anchor_w, "[US] EMP & AEGIS PULSE", "Stripped Shields + Aegis Repair", [80, 180, 255]);
                 audio.play_spatial(SfxCue::LaserPulse, anchor_w);
-                self.combat_log.push(format!("🇺🇸 North America EMP & Aegis Pulse disrupted {} foes and fortified lead unit!", affected));
+                self.combat_log.push(format!("[US] North America EMP & Aegis Pulse disrupted {} foes and fortified lead unit!", affected));
             }
             OriginAllegiance::SouthAmerica => {
                 let mut purged = 0;
@@ -1587,14 +1707,17 @@ impl ClientMatchState {
                     }
                 }
                 vfx.spawn_bio_ability_ring(anchor_w, [0.15, 0.95, 0.45]);
-                vfx.spawn_popup(anchor_w, "🇧🇷 PRIMAL SURGE", format!("Purged {} & Healed +1 STR", purged), [78, 248, 158]);
+                vfx.spawn_popup(anchor_w, "[BR] PRIMAL SURGE", format!("Purged {} & Healed +1 STR", purged), [78, 248, 158]);
                 audio.play_spatial(SfxCue::BioHealChime, anchor_w);
-                self.combat_log.push(format!("🇧🇷 South America Primal Surge cleansed toxins from {} units and healed all allies!", purged));
+                self.combat_log.push(format!("[BR] South America Primal Surge cleansed toxins from {} units and healed all allies!", purged));
             }
             OriginAllegiance::Neutral => {
                 *self.economy.home_base_munitions.entry(team_id).or_insert(0) += 2;
                 self.combat_log.push("Frontier Scavengers gathered +2 extra Munitions!".into());
             }
+        }
+        if emit_net {
+            self.emit_lockstep_cmd(LockstepCommand::FactionCommand { team_id });
         }
         true
     }
@@ -1603,6 +1726,7 @@ impl ClientMatchState {
     pub fn execute_biotype_primal_surge(
         &mut self,
         team_id: u8,
+        emit_net: bool,
         vfx: &mut VfxManager,
         audio: &mut SpatialAudioEngine,
     ) -> bool {
@@ -1713,9 +1837,9 @@ impl ClientMatchState {
                     }
                 }
                 *self.economy.actions_remaining.entry(team_id).or_insert(0) += 1;
-                vfx.spawn_popup(anchor_w, "🦗 SWARM FRENZY", "+1 Action & Free Ammo", [220, 180, 50]);
+                vfx.spawn_popup(anchor_w, "⚡ SWARM FRENZY", "+1 Action & Free Ammo", [220, 180, 50]);
                 audio.play_spatial(SfxCue::UiCardTurn, anchor_w);
-                self.combat_log.push(format!("🦗 Insect Swarm Frenzy stimulated {} insects with +1 Action and emergency ammo!", count));
+                self.combat_log.push(format!("⚡ Insect Swarm Frenzy stimulated {} insects with +1 Action and emergency ammo!", count));
             }
             OrganismFaction::Fish => {
                 for ent in self.entities.iter_mut() {
@@ -1756,6 +1880,9 @@ impl ClientMatchState {
                 self.combat_log.push("🐸 Amphibian Secretory Slime cloaked all amphibians in stealth and restored +1 STR!".into());
             }
             _ => {}
+        }
+        if emit_net {
+            self.emit_lockstep_cmd(LockstepCommand::PrimalSurge { team_id });
         }
         true
     }
@@ -1865,9 +1992,9 @@ impl ClientMatchState {
                         self.entities[idx].unit.stunned_this_turn = true;
                     }
                 }
-                vfx.spawn_popup(center_w, "🦬 STAMPEDE SHOCKWAVE", "2 DMG & Stun", [245, 165, 75]);
+                vfx.spawn_popup(center_w, "🐾 STAMPEDE SHOCKWAVE", "2 DMG & Stun", [245, 165, 75]);
                 audio.play_spatial(SfxCue::MeleeClash, center_w);
-                self.combat_log.push(format!("🦬 P{} deployed Stampede Shockwave!", team_id));
+                self.combat_log.push(format!("🐾 P{} deployed Stampede Shockwave!", team_id));
             }
             "Napalm Basking Surge" => {
                 for ent in self.entities.iter_mut() {
@@ -1948,9 +2075,9 @@ impl ClientMatchState {
                     self.ai_hand.push(drawn);
                 }
                 vfx.spawn_bio_ability_ring(center_w, [0.95, 0.78, 0.18]);
-                vfx.spawn_popup(center_w, "🦗 PHEROMONE CALL", "Insect Ammo Full + Draw 1", [245, 205, 70]);
+                vfx.spawn_popup(center_w, "⚡ PHEROMONE CALL", "Insect Ammo Full + Draw 1", [245, 205, 70]);
                 audio.play_spatial(SfxCue::UiCardTurn, center_w);
-                self.combat_log.push(format!("🦗 P{} deployed Pheromone Brood Call!", team_id));
+                self.combat_log.push(format!("⚡ P{} deployed Pheromone Brood Call!", team_id));
             }
             "Corrosive Acid Spray" => {
                 if let Some(idx) = self.entity_at(target_hex) {
@@ -1960,9 +2087,9 @@ impl ClientMatchState {
                     }
                 }
                 vfx.spawn_bio_ability_ring(center_w, [0.7, 0.98, 0.15]);
-                vfx.spawn_popup(center_w, "🧪 CORROSIVE ACID", "Armor Melted + 2 DMG", [185, 255, 65]);
+                vfx.spawn_popup(center_w, "☠ CORROSIVE ACID", "Armor Melted + 2 DMG", [185, 255, 65]);
                 audio.play_spatial(SfxCue::VenomSnare, center_w);
-                self.combat_log.push(format!("🧪 P{} deployed Corrosive Acid Spray!", team_id));
+                self.combat_log.push(format!("☠ P{} deployed Corrosive Acid Spray!", team_id));
             }
             "Abyssal Riptide" => {
                 for ent in self.entities.iter_mut() {
@@ -1987,9 +2114,9 @@ impl ClientMatchState {
                     }
                 }
                 vfx.spawn_bio_ability_ring(center_w, [0.92, 0.25, 0.85]);
-                vfx.spawn_popup(center_w, "🪼 NEURAL SHORT-CIRCUIT", "Stun + 2 Poison", [240, 95, 220]);
+                vfx.spawn_popup(center_w, "⚡ NEURAL SHORT-CIRCUIT", "Stun + 2 Poison", [240, 95, 220]);
                 audio.play_spatial(SfxCue::LaserPulse, center_w);
-                self.combat_log.push(format!("🪼 P{} deployed Neural Short-Circuit!", team_id));
+                self.combat_log.push(format!("⚡ P{} deployed Neural Short-Circuit!", team_id));
             }
             "Phantom Mist Veil" => {
                 for ent in self.entities.iter_mut() {
@@ -2046,9 +2173,9 @@ impl ClientMatchState {
                     }
                 }
                 vfx.spawn_bio_ability_ring(center_w, [0.25, 0.95, 0.65]);
-                vfx.spawn_popup(center_w, "🧬 GENETIC SPLICE SURGE", "+1 Shield & +2 STR (Single-Use)", [95, 245, 175]);
+                vfx.spawn_popup(center_w, "✦ GENETIC SPLICE SURGE", "+1 Shield & +2 STR (Single-Use)", [95, 245, 175]);
                 audio.play_spatial(SfxCue::BioHealChime, center_w);
-                self.combat_log.push(format!("🧬 P{} expended {} (+1 Shield & +2 STR in Radius 2)!", team_id, card.unit_name));
+                self.combat_log.push(format!("✦ P{} expended {} (+1 Shield & +2 STR in Radius 2)!", team_id, card.unit_name));
             }
             _ => {
                 self.combat_log.push(format!("✨ P{} deployed {}!", team_id, card.unit_name));
@@ -2082,41 +2209,11 @@ impl ClientMatchState {
         // Firing reveals a Stealth / Burrowed ambusher until the start of its next turn!
         self.entities[att_idx].unit.revealed_until_turn_start = true;
 
+        let ctx = self.build_combat_context(att_idx, def_idx);
+        let is_melee = ctx.is_melee;
         let att_hex = self.entities[att_idx].hex;
         let def_hex = self.entities[def_idx].hex;
-        let dist = att_hex.unsigned_distance_to(def_hex) as u8;
-        let is_melee = (!self.entities[def_idx].card.can_fly || self.entities[att_idx].card.can_fly)
-            && dist <= self.entities[att_idx].card.melee_range
-            && (self.entities[att_idx].card.ranged_distance == 0 || (dist == 1 && !is_laser));
-
-        let adj_cmd = self.entities.iter().any(|e| {
-            e.team_id == att_team
-                && e.unit.current_str_hp > 0
-                && e.card.combat_class == CombatClass::Commander
-                && e.hex.unsigned_distance_to(att_hex) == 1
-        });
-        let pack_bonus = self.entities[att_idx].card.faction == OrganismFaction::Mammal
-            && self.entities.iter().any(|e| {
-                e.team_id == att_team
-                    && e.uid != self.entities[att_idx].uid
-                    && e.unit.current_str_hp > 0
-                    && e.card.faction == OrganismFaction::Mammal
-                    && e.hex.unsigned_distance_to(att_hex) == 1
-            });
-        let brush_bypass = matches!(
-            self.entities[att_idx].card.faction,
-            OrganismFaction::Arachnid | OrganismFaction::Insect
-        ) && dist <= 2;
-        let def_cover = self
-            .scenario
-            .map
-            .tiles
-            .get(&def_hex)
-            .map_or(false, |t| {
-                (t.morphology.grants_ranged_cover() && !(brush_bypass && t.morphology == Morphology::RoughCover))
-                    || (self.entities[def_idx].card.faction == OrganismFaction::Fish && t.morphology.is_water())
-            })
-            && !self.entities[def_idx].card.can_fly;
+        let dist = ctx.hex_distance;
 
         let att_deck = self.decks[(att_team - 1).min(1) as usize].clone();
         let def_team = self.entities[def_idx].team_id;
@@ -2130,18 +2227,10 @@ impl ClientMatchState {
             }
         }
 
-        // Pure Mammal Apex Pack: +2 to Hit rolls when adjacent to at least 1 Mammal ally
-        let pure_mammal_apex = att_deck.is_pure_biotype() && att_deck.primary_faction == OrganismFaction::Mammal && pack_bonus;
-
-        let ctx = CombatContext {
-            hex_distance: dist,
-            is_melee,
-            attacker_can_fly: self.entities[att_idx].card.can_fly,
-            attacker_stealth_ambush: self.entities[att_idx].card.stealth,
-            attacker_adjacent_commander: adj_cmd,
-            attacker_pack_tactics_bonus: pack_bonus,
-            defender_in_rough_cover: def_cover,
-        };
+        // Pure Mammal Apex Pack: +1 to Hit rolls when adjacent to at least 1 Mammal ally
+        let pure_mammal_apex = att_deck.is_pure_biotype()
+            && att_deck.primary_faction == OrganismFaction::Mammal
+            && ctx.attacker_pack_tactics_bonus;
 
         let hit_d6 = self.roll_d6();
         let dmg_d6 = self.roll_d6();
@@ -2155,7 +2244,11 @@ impl ClientMatchState {
             self.entities[def_idx].unit.clone(),
         );
         let effective_hit_d6 = if pure_mammal_apex {
-            hit_d6.saturating_add(1).min(6)
+            if hit_d6 == 1 {
+                1
+            } else {
+                hit_d6.saturating_add(1).min(6)
+            }
         } else {
             hit_d6
         };
@@ -2165,7 +2258,7 @@ impl ClientMatchState {
             // Passive Doctrine: North America Hardened Core (Laser deals +1 damage on natural 6 hit roll)
             if att_deck.faction == OriginAllegiance::NorthAmerica && is_laser && hit_d6 == 6 && def_u.current_str_hp > 0 {
                 def_u.current_str_hp = def_u.current_str_hp.saturating_sub(1);
-                self.combat_log.push("🇺🇸 North America Hardened Core: Laser Critical dealt +1 bonus damage!".into());
+                self.combat_log.push("[US] North America Hardened Core: Laser Critical dealt +1 bonus damage!".into());
             }
             // Passive Doctrine: Pure Bird Stratospheric Apex (+1 aerial dive/strafe damage)
             if att_deck.is_pure_biotype() && att_deck.primary_faction == OrganismFaction::Bird && self.entities[att_idx].card.can_fly && dist == 1 && def_u.current_str_hp > 0 {
@@ -2895,8 +2988,8 @@ impl ClientMatchState {
             if self.active_team != net_team {
                 return;
             }
-            self.outbound_net_cmds.push(LockstepCommand::EndTurn { team_id: net_team });
             self.advance_two_player_turn(audio);
+            self.emit_lockstep_cmd(LockstepCommand::EndTurn { team_id: net_team });
             return;
         }
         if self.hotseat_mode {
@@ -2961,9 +3054,6 @@ impl ClientMatchState {
         if self.entities[ent_idx].unit.current_str_hp >= self.entities[ent_idx].unit.max_str_hp {
             return;
         }
-        if emit_net && self.online_local_team.is_some() {
-            self.outbound_net_cmds.push(LockstepCommand::RestUnit { team_id: team, unit_hex });
-        }
         *self.economy.actions_remaining.entry(team).or_insert(1) -= 1;
         let r_deck = &self.decks[(team - 1).min(1) as usize];
         let heal_amt = if r_deck.is_pure_biotype() && r_deck.primary_faction == OrganismFaction::Reptile && self.entities[ent_idx].card.faction == OrganismFaction::Reptile { 2 } else { 1 };
@@ -2976,15 +3066,113 @@ impl ClientMatchState {
             "P{} {} rested (+1 STR).",
             team, self.entities[ent_idx].card.unit_name
         ));
+        if emit_net {
+            self.emit_lockstep_cmd(LockstepCommand::RestUnit { team_id: team, unit_hex });
+        }
     }
 
-    /// Replays a remote peer's `LockstepCommand` deterministically on this client.
+    fn emit_lockstep_cmd(&mut self, cmd: LockstepCommand) {
+        if self.online_local_team.is_some() {
+            let post_state_hash = self.compute_state_hash();
+            self.outbound_net_cmds.push(StampedLockstepCommand {
+                cmd,
+                post_state_hash,
+            });
+        }
+    }
+
+    /// Computes a deterministic 64-bit FNV-1a state digest across turn, economy, cards, entities, and map tiles.
+    pub fn compute_state_hash(&self) -> u64 {
+        #[inline]
+        fn fnv_u64(mut h: u64, val: u64) -> u64 {
+            for b in val.to_le_bytes() {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0100_0000_01B3);
+            }
+            h
+        }
+        #[inline]
+        fn fnv_str(mut h: u64, s: &str) -> u64 {
+            for b in s.as_bytes() {
+                h ^= u64::from(*b);
+                h = h.wrapping_mul(0x0100_0000_01B3);
+            }
+            h ^= 0xFF;
+            h.wrapping_mul(0x0100_0000_01B3)
+        }
+
+        let mut h: u64 = 0xCBF2_9CE4_8422_2325;
+        h = fnv_u64(h, u64::from(self.turn_number));
+        h = fnv_u64(h, u64::from(self.active_team));
+        h = fnv_u64(h, u64::from(self.p1_obj_progress));
+        h = fnv_u64(h, u64::from(self.p2_obj_progress));
+        h = fnv_u64(h, self.next_uid);
+        for tid in [1u8, 2u8] {
+            h = fnv_u64(h, u64::from(self.economy.home_base_munitions.get(&tid).copied().unwrap_or(0)));
+            h = fnv_u64(h, u64::from(self.economy.actions_remaining.get(&tid).copied().unwrap_or(0)));
+            h = fnv_u64(h, u64::from(self.economy.faction_ability_used.get(&tid).copied().unwrap_or(false)));
+            h = fnv_u64(h, u64::from(self.economy.primal_surge_used.get(&tid).copied().unwrap_or(false)));
+        }
+        for ck in &self.hand {
+            h = fnv_str(h, ck);
+        }
+        h = fnv_u64(h, self.draw_pile.len() as u64);
+        for ck in &self.ai_hand {
+            h = fnv_str(h, ck);
+        }
+        h = fnv_u64(h, self.ai_draw_pile.len() as u64);
+        for gy in [&self.graveyard, &self.ai_graveyard] {
+            h = fnv_u64(h, gy.len() as u64);
+            for t in gy {
+                h = fnv_str(h, &t.card_key);
+                h = fnv_u64(h, u64::from(t.recovered_str));
+                h = fnv_u64(h, u64::from(t.target_str));
+            }
+        }
+
+        let mut sorted_ents: Vec<&LiveEntity> = self
+            .entities
+            .iter()
+            .filter(|e| e.unit.current_str_hp > 0)
+            .collect();
+        sorted_ents.sort_by_key(|e| e.uid);
+        for e in sorted_ents {
+            h = fnv_u64(h, e.uid);
+            h = fnv_u64(h, u64::from(e.team_id));
+            h = fnv_u64(h, (e.hex.x as i64) as u64);
+            h = fnv_u64(h, (e.hex.y as i64) as u64);
+            h = fnv_u64(h, u64::from(e.unit.current_str_hp));
+            h = fnv_u64(h, u64::from(e.unit.current_armor));
+            h = fnv_u64(h, u64::from(e.unit.evade));
+            h = fnv_u64(h, u64::from(e.unit.fortified_stacks));
+            h = fnv_u64(h, u64::from(e.unit.carried_munitions));
+            h = fnv_u64(h, u64::from(e.unit.poisoned_stacks));
+            h = fnv_u64(h, u64::from(e.unit.rooted_turns));
+            h = fnv_u64(h, u64::from(e.unit.temp_move_bonus));
+            h = fnv_u64(h, u64::from(e.unit.target_locked));
+            h = fnv_u64(h, u64::from(e.unit.stunned_this_turn));
+            h = fnv_u64(h, u64::from(e.unit.temp_stealth));
+            h = fnv_u64(h, u64::from(e.unit.burrowed));
+        }
+
+        let mut tiles: Vec<_> = self.scenario.map.tiles.iter().collect();
+        tiles.sort_by_key(|(hx, _)| (hx.x, hx.y));
+        for (hx, t) in tiles {
+            h = fnv_u64(h, (((hx.x as i64) << 16) ^ (hx.y as i64)) as u64);
+            h = fnv_u64(h, t.morphology as u64);
+            h = fnv_u64(h, u64::from(t.elevation));
+        }
+        h
+    }
+
+    /// Replays a remote peer's `LockstepCommand` deterministically and verifies its `post_state_hash`.
     pub fn apply_remote_lockstep_command(
         &mut self,
         cmd: LockstepCommand,
+        expected_post_hash: u64,
         vfx: &mut VfxManager,
         audio: &mut SpatialAudioEngine,
-    ) {
+    ) -> Result<u64, String> {
         let saved_net = self.online_local_team.take();
         let prev_hotseat = self.hotseat_mode;
         self.hotseat_mode = true; // Allow either team's move/deploy/attack validation to execute cleanly
@@ -3016,6 +3204,14 @@ impl ClientMatchState {
                 self.active_team = team_id;
                 self.rest_unit_at_hex(unit_hex, false, vfx, audio);
             }
+            LockstepCommand::FactionCommand { team_id } => {
+                self.active_team = team_id;
+                self.execute_faction_command_ability(team_id, false, vfx, audio);
+            }
+            LockstepCommand::PrimalSurge { team_id } => {
+                self.active_team = team_id;
+                self.execute_biotype_primal_surge(team_id, false, vfx, audio);
+            }
             LockstepCommand::EndTurn { team_id } => {
                 self.active_team = team_id;
                 self.advance_two_player_turn(audio);
@@ -3024,6 +3220,15 @@ impl ClientMatchState {
         self.hotseat_mode = prev_hotseat;
         self.online_local_team = saved_net;
         self.outbound_net_cmds.clear();
+
+        let actual_hash = self.compute_state_hash();
+        if actual_hash != expected_post_hash {
+            Err(format!(
+                "TCP Lockstep desync detected: expected 0x{expected_post_hash:016X}, local 0x{actual_hash:016X}"
+            ))
+        } else {
+            Ok(actual_hash)
+        }
     }
 
     fn try_ai_deploy_from_hand(&mut self, vfx: &mut VfxManager, audio: &mut SpatialAudioEngine) -> bool {
@@ -3288,7 +3493,7 @@ impl ClientMatchState {
                 _ => false,
             };
             if should_trigger {
-                self.execute_faction_command_ability(2, vfx, audio);
+                self.execute_faction_command_ability(2, false, vfx, audio);
             }
         }
 
@@ -3308,7 +3513,7 @@ impl ClientMatchState {
                 _ => false,
             };
             if should_surge {
-                self.execute_biotype_primal_surge(2, vfx, audio);
+                self.execute_biotype_primal_surge(2, false, vfx, audio);
             }
         }
 
@@ -3692,17 +3897,29 @@ mod tests {
         host.end_active_turn(&mut vfx_h, &mut aud_h);
         let cmds_from_host: Vec<_> = host.outbound_net_cmds.drain(..).collect();
         assert_eq!(cmds_from_host.len(), 1);
-        for c in cmds_from_host {
-            client.apply_remote_lockstep_command(c, &mut vfx_c, &mut aud_c);
+        for stamped in cmds_from_host {
+            client
+                .apply_remote_lockstep_command(stamped.cmd, stamped.post_state_hash, &mut vfx_c, &mut aud_c)
+                .expect("Host EndTurn lockstep hash must match client");
         }
         assert_eq!(host.active_team, 2);
         assert_eq!(client.active_team, 2);
 
-        // Client (Team 2) ends Turn 1 -> transmits back to Host -> both advance to Turn 2!
+        // Client (Team 2) executes FactionCommand, PrimalSurge, and EndTurn -> transmits back to Host
+        assert!(client.execute_faction_command_ability(2, true, &mut vfx_c, &mut aud_c));
+        assert!(client.execute_biotype_primal_surge(2, true, &mut vfx_c, &mut aud_c));
         client.end_active_turn(&mut vfx_c, &mut aud_c);
-        for c in client.outbound_net_cmds.drain(..) {
-            host.apply_remote_lockstep_command(c, &mut vfx_h, &mut aud_h);
+        let cmds_from_client: Vec<_> = client.outbound_net_cmds.drain(..).collect();
+        assert_eq!(cmds_from_client.len(), 3);
+        assert!(matches!(cmds_from_client[0].cmd, LockstepCommand::FactionCommand { team_id: 2 }));
+        assert!(matches!(cmds_from_client[1].cmd, LockstepCommand::PrimalSurge { team_id: 2 }));
+        assert!(matches!(cmds_from_client[2].cmd, LockstepCommand::EndTurn { team_id: 2 }));
+
+        for stamped in cmds_from_client {
+            host.apply_remote_lockstep_command(stamped.cmd, stamped.post_state_hash, &mut vfx_h, &mut aud_h)
+                .expect("Client command lockstep hash must match host");
         }
+        assert_eq!(host.compute_state_hash(), client.compute_state_hash());
         assert_eq!(host.turn_number, 2);
         assert_eq!(client.turn_number, 2);
         assert_eq!(host.hand, client.hand);
@@ -3710,6 +3927,105 @@ mod tests {
         for _ in 0..6 {
             assert_eq!(host.roll_d6(), client.roll_d6());
         }
+
+        // Tampered post_state_hash must return an explicit desync Err
+        let desync = host.apply_remote_lockstep_command(
+            LockstepCommand::FactionCommand { team_id: 1 },
+            0xDEAD_0000_BEEF_9999,
+            &mut vfx_h,
+            &mut aud_h,
+        );
+        assert!(desync.is_err(), "Mismatched post_state_hash must be flagged");
+    }
+
+    #[test]
+    fn hover_combat_odds_preview_reflects_live_board_modifiers() {
+        let (roster, mut decks) = test_roster_and_decks();
+        decks[0].primary_faction = OrganismFaction::Mammal;
+        decks[0].secondary_faction = OrganismFaction::Mammal;
+        decks[0].is_pure_biotype = true;
+        decks[1].faction = OriginAllegiance::Europe;
+
+        let mut session = ClientMatchState::new(roster, decks, ScenarioId::EmergenceSkirmish, 0x2072, 0);
+        session.entities.clear();
+
+        let lion = session.card_def("Fireclaw Lion").unwrap().clone();
+        let commander = session.card_def("Commander (Australia)").unwrap().clone();
+        let ally_mammal = session.card_def("Fireclaw Lion").unwrap().clone();
+        let defender = session.card_def("Battlephant").unwrap().clone();
+
+        for h in [Hex::new(0, 0), Hex::new(-1, 0), Hex::new(0, -1), Hex::new(3, 0)] {
+            if let Some(t) = session.scenario.map.tiles.get_mut(&h) {
+                t.morphology = if h == Hex::new(3, 0) {
+                    Morphology::RoughCover
+                } else {
+                    Morphology::Flat
+                };
+                t.elevation = 0;
+            }
+        }
+
+        session.entities.push(LiveEntity {
+            uid: 10,
+            team_id: 1,
+            hex: Hex::new(0, 0),
+            vox_slug: "mammal_fireclaw_lion".into(),
+            yaw_radians: 0.0,
+            unit: make_board_unit(&lion),
+            card: lion,
+        });
+        session.entities.push(LiveEntity {
+            uid: 11,
+            team_id: 1,
+            hex: Hex::new(-1, 0),
+            vox_slug: "human_commander".into(),
+            yaw_radians: 0.0,
+            unit: make_board_unit(&commander),
+            card: commander,
+        });
+        session.entities.push(LiveEntity {
+            uid: 12,
+            team_id: 1,
+            hex: Hex::new(0, -1),
+            vox_slug: "mammal_fireclaw_lion".into(),
+            yaw_radians: 0.0,
+            unit: make_board_unit(&ally_mammal),
+            card: ally_mammal,
+        });
+        let mut def_u = make_board_unit(&defender);
+        def_u.fortified_stacks = 0;
+        session.entities.push(LiveEntity {
+            uid: 20,
+            team_id: 2,
+            hex: Hex::new(3, 0),
+            vox_slug: "mammal_battlephant".into(),
+            yaw_radians: 0.0,
+            unit: def_u,
+            card: defender,
+        });
+
+        let preview = session.preview_combat_odds(0, 3);
+        assert_eq!(preview.dist, 3);
+        assert!(preview.ctx.attacker_adjacent_commander);
+        assert!(preview.ctx.attacker_pack_tactics_bonus);
+        assert!(preview.ctx.defender_in_rough_cover);
+        assert!(preview.pure_mammal_apex);
+        assert!(preview.aegis_bastion);
+        assert_eq!(preview.effective_armor, session.entities[3].unit.current_armor + 1);
+        assert_eq!(preview.required_d6, Some(2));
+        assert!(preview.hit_summary.contains("2+"));
+
+        // Verify Shield block and Burrowed ranged immunity states
+        session.entities[3].unit.fortified_stacks = 1;
+        let blocked = session.preview_combat_odds(0, 3);
+        assert_eq!(blocked.required_d6, None);
+        assert!(blocked.hit_summary.contains("BLOCKED"));
+
+        session.entities[3].unit.fortified_stacks = 0;
+        session.entities[3].unit.burrowed = true;
+        let burrowed = session.preview_combat_odds(0, 3);
+        assert_eq!(burrowed.required_d6, None);
+        assert!(burrowed.hit_summary.contains("IMMUNE"));
     }
 
     #[test]
@@ -3757,6 +4073,160 @@ mod tests {
         assert!(
             session.is_entity_visible_to(1, 1, &vis, &det),
             "Ground unit with radar_range >= 2 must reveal stealthed enemy at dist 2"
+        );
+    }
+
+    #[test]
+    fn load_scenario_resets_next_uid_and_economy_for_lockstep_parity() {
+        let (roster, decks) = test_roster_and_decks();
+        let mut host = ClientMatchState::new(
+            roster.clone(),
+            decks.clone(),
+            ScenarioId::EmergenceSkirmish,
+            0x2072_0814,
+            0,
+        );
+        let mut client = ClientMatchState::new(
+            roster,
+            decks,
+            ScenarioId::EmergenceSkirmish,
+            0x2072_0814,
+            0,
+        );
+
+        let mut vfx = VfxManager::default();
+        let mut aud = SpatialAudioEngine::new();
+
+        // Simulate pre-match activity on host: scenario switch + local FactionCommand/PrimalSurge
+        host.load_scenario(ScenarioId::BunkerBreakout, 0x9999);
+        assert!(host.execute_faction_command_ability(1, false, &mut vfx, &mut aud));
+        assert!(host.execute_biotype_primal_surge(1, false, &mut vfx, &mut aud));
+        assert!(host.next_uid > 3);
+
+        // Both peers now load the same match scenario (as in MatchInit / ClientJoinDeck)
+        host.online_local_team = Some(1);
+        client.online_local_team = Some(2);
+        host.load_scenario(ScenarioId::BioRiverConvoy, 0x2072_0814);
+        client.load_scenario(ScenarioId::BioRiverConvoy, 0x2072_0814);
+
+        assert_eq!(host.next_uid, client.next_uid);
+        assert_eq!(
+            host.compute_state_hash(),
+            client.compute_state_hash(),
+            "Host and Client hashes must match after load_scenario regardless of prior activity"
+        );
+
+        host.outbound_net_cmds.clear();
+        assert!(host.execute_faction_command_ability(1, true, &mut vfx, &mut aud));
+        let stamped = host.outbound_net_cmds.pop().expect("Command must be stamped");
+        client
+            .apply_remote_lockstep_command(stamped.cmd, stamped.post_state_hash, &mut vfx, &mut aud)
+            .expect("Lockstep command after scenario reload must pass hash check");
+    }
+
+    #[test]
+    fn preview_combat_odds_matches_execute_combat_pair_on_burrowed_fortified_and_apex_natural_one() {
+        let (roster, mut decks) = test_roster_and_decks();
+        decks[0].primary_faction = OrganismFaction::Mammal;
+        decks[0].secondary_faction = OrganismFaction::Mammal;
+        decks[0].is_pure_biotype = true;
+
+        let mut session = ClientMatchState::new(roster, decks, ScenarioId::EmergenceSkirmish, 0x2072, 0);
+        session.entities.clear();
+        for h in [Hex::new(0, 0), Hex::new(-1, 0), Hex::new(0, -1), Hex::new(2, 0)] {
+            if let Some(t) = session.scenario.map.tiles.get_mut(&h) {
+                t.morphology = Morphology::Flat;
+                t.elevation = 0;
+            }
+        }
+
+        let lion = session.card_def("Fireclaw Lion").unwrap().clone();
+        let commander = session.card_def("Commander (Australia)").unwrap().clone();
+        let defender = session.card_def("Battlephant").unwrap().clone();
+
+        session.entities.push(LiveEntity {
+            uid: 10,
+            team_id: 1,
+            hex: Hex::new(0, 0),
+            vox_slug: "mammal_fireclaw_lion".into(),
+            yaw_radians: 0.0,
+            unit: make_board_unit(&lion),
+            card: lion.clone(),
+        });
+        session.entities.push(LiveEntity {
+            uid: 11,
+            team_id: 1,
+            hex: Hex::new(-1, 0),
+            vox_slug: "human_commander".into(),
+            yaw_radians: 0.0,
+            unit: make_board_unit(&commander),
+            card: commander,
+        });
+        session.entities.push(LiveEntity {
+            uid: 12,
+            team_id: 1,
+            hex: Hex::new(0, -1),
+            vox_slug: "mammal_fireclaw_lion".into(),
+            yaw_radians: 0.0,
+            unit: make_board_unit(&lion),
+            card: lion,
+        });
+
+        let mut def_u = make_board_unit(&defender);
+        def_u.fortified_stacks = 1;
+        def_u.burrowed = true;
+        session.entities.push(LiveEntity {
+            uid: 20,
+            team_id: 2,
+            hex: Hex::new(2, 0),
+            vox_slug: "mammal_battlephant".into(),
+            yaw_radians: 0.0,
+            unit: def_u,
+            card: defender,
+        });
+
+        let mut vfx = VfxManager::default();
+        let mut aud = SpatialAudioEngine::new();
+
+        // 1) Burrowed + Fortified at dist=2 (!is_melee): preview must say IMMUNE (Burrowed) and shield stays intact
+        let preview_bf = session.preview_combat_odds(0, 3);
+        assert_eq!(preview_bf.required_d6, None);
+        assert!(
+            preview_bf.hit_summary.contains("IMMUNE (Burrowed)"),
+            "Expected IMMUNE (Burrowed) before shield check, got: {}",
+            preview_bf.hit_summary
+        );
+        let hp_before = session.entities[3].unit.current_str_hp;
+        session.economy.actions_remaining.insert(1, 5);
+        session.execute_combat_pair(0, 3, &mut vfx, &mut aud);
+        assert_eq!(session.entities[3].unit.current_str_hp, hp_before);
+        assert_eq!(
+            session.entities[3].unit.fortified_stacks, 1,
+            "Burrowed ranged immunity must resolve before fortified_stacks is consumed"
+        );
+
+        // 2) Pure Mammal Apex natural-1 always misses even when base_req == 2
+        session.entities[3].unit.burrowed = false;
+        session.entities[3].unit.fortified_stacks = 0;
+        let preview_apex = session.preview_combat_odds(0, 3);
+        assert_eq!(preview_apex.required_d6, Some(2));
+        assert!(preview_apex.pure_mammal_apex);
+
+        // Find deterministic seed whose first roll_d6() yields natural 1
+        let nat1_seed = (0u64..1000)
+            .find(|&s| ((SplitMix64::new(s).next_u64() % 6) + 1) == 1)
+            .expect("Must find seed yielding natural 1 on first D6 roll");
+        session.dice_rng = SplitMix64::new(nat1_seed);
+        let armor_before = session.entities[3].unit.current_armor;
+        let hp_before_apex = session.entities[3].unit.current_str_hp;
+        session.execute_combat_pair(0, 3, &mut vfx, &mut aud);
+        assert_eq!(
+            session.entities[3].unit.current_armor, armor_before,
+            "Natural 1 must miss under Pure Mammal Apex"
+        );
+        assert_eq!(
+            session.entities[3].unit.current_str_hp, hp_before_apex,
+            "Natural 1 must miss under Pure Mammal Apex"
         );
     }
 }

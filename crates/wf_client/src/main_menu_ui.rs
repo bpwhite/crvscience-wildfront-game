@@ -34,6 +34,7 @@ pub struct MainMenuActions {
     pub open_codex: bool,
     pub open_map_editor: bool,
     pub open_replay_theater: bool,
+    pub open_about: bool,
     pub select_ai_difficulty: Option<wf_sim::AiDifficulty>,
     pub quickload: bool,
     pub select_scenario: Option<ScenarioId>,
@@ -304,6 +305,19 @@ impl MainMenuScreen {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("🚪 Quit Desktop").clicked() {
                             act.quit_app = true;
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Copyright CRV Science Network  •  GPL-3.0-or-later")
+                            .small()
+                            .color(Color32::from_rgb(156, 186, 200)),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("ℹ About WildFront").clicked() {
+                            act.open_about = true;
                         }
                     });
                 });

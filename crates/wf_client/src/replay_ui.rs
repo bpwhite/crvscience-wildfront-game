@@ -16,7 +16,6 @@
 //! In-Game Turn-by-Turn Replay Scrubber, Tactical Undo & Live Telemetry Theater (`F4`) (`v3.4.0`).
 
 use std::fs;
-use std::path::Path;
 use egui::{
     pos2, Align2, Color32, Frame, Margin, Order, Pos2, Rect, RichText, Slider, Stroke, Ui, Vec2,
     Window,
@@ -281,61 +280,68 @@ impl ReplayTheaterStudio {
                 ui.horizontal(|ui| {
                     if ui.button("💾 Export Timeline (.RON)").clicked() {
                         let bundle = SavedTimelineBundle {
-                            engine_version: "3.4.0".into(),
+                            engine_version: env!("CARGO_PKG_VERSION").into(),
                             scenario_title: session.scenario.title.clone(),
                             keyframes: session.timeline_frames.clone(),
                         };
-                        let rel = Path::new(&self.export_path);
-                        let p = if rel.is_relative() {
-                            crate::paths::writable_app_path(&self.export_path)
-                        } else {
-                            rel.to_path_buf()
-                        };
-                        let res = (|| -> Result<(), String> {
-                            crate::paths::ensure_parent_dir(&p).map_err(|e| e.to_string())?;
-                            let raw = to_string_pretty(&bundle, PrettyConfig::new().depth_limit(4))
-                                .map_err(|e| e.to_string())?;
-                            fs::write(&p, raw).map_err(|e| e.to_string())
-                        })();
-                        match res {
-                            Ok(()) => {
-                                self.status_line = format!(
-                                    "Exported {} keyframes to {}",
-                                    session.timeline_frames.len(),
-                                    self.export_path
-                                );
-                                audio.play_ui(SfxCue::BioHealChime);
+                        let default_dir = crate::paths::writable_app_path("replays");
+                        if let Some(p) = rfd::FileDialog::new()
+                            .set_title("Export Match Replay Timeline (.RON)")
+                            .set_directory(&default_dir)
+                            .set_file_name("match_timeline_2072.ron")
+                            .add_filter("RON Timeline", &["ron"])
+                            .save_file()
+                        {
+                            self.export_path = p.display().to_string();
+                            let res = (|| -> Result<(), String> {
+                                crate::paths::ensure_parent_dir(&p).map_err(|e| e.to_string())?;
+                                let raw = to_string_pretty(&bundle, PrettyConfig::new().depth_limit(4))
+                                    .map_err(|e| e.to_string())?;
+                                fs::write(&p, raw).map_err(|e| e.to_string())
+                            })();
+                            match res {
+                                Ok(()) => {
+                                    self.status_line = format!(
+                                        "✓ Exported {} keyframes to {}",
+                                        session.timeline_frames.len(),
+                                        p.display()
+                                    );
+                                    audio.play_ui(SfxCue::BioHealChime);
+                                }
+                                Err(e) => self.status_line = format!("⚠ Export failed: {e}"),
                             }
-                            Err(e) => self.status_line = format!("Export failed: {e}"),
                         }
                     }
                     if ui.button("📂 Import Timeline (.RON)").clicked() {
-                        let rel = Path::new(&self.export_path);
-                        let p = if rel.is_relative() {
-                            crate::paths::writable_app_path(&self.export_path)
-                        } else {
-                            rel.to_path_buf()
-                        };
-                        match fs::read_to_string(&p)
-                            .map_err(|e| e.to_string())
-                            .and_then(|raw| ron::from_str::<SavedTimelineBundle>(&raw).map_err(|e| e.to_string()))
+                        let default_dir = crate::paths::writable_app_path("replays");
+                        if let Some(p) = rfd::FileDialog::new()
+                            .set_title("Import Match Replay Timeline (.RON)")
+                            .set_directory(&default_dir)
+                            .add_filter("RON Timeline", &["ron"])
+                            .pick_file()
                         {
-                            Ok(bundle) if !bundle.keyframes.is_empty() => {
-                                session.timeline_frames = bundle.keyframes;
-                                self.cursor_idx = session.timeline_frames.len() - 1;
-                                let snap = session.timeline_frames[self.cursor_idx].clone();
-                                *active_seed = snap.active_seed;
-                                session.restore_snapshot_preserving_timeline(snap);
-                                self.status_line = format!(
-                                    "Imported {} keyframes ({})!",
-                                    session.timeline_frames.len(),
-                                    bundle.scenario_title
-                                );
-                                audio.play_ui(SfxCue::UiCardTurn);
-                                scene_restored = true;
+                            self.export_path = p.display().to_string();
+                            match fs::read_to_string(&p)
+                                .map_err(|e| e.to_string())
+                                .and_then(|raw| ron::from_str::<SavedTimelineBundle>(&raw).map_err(|e| e.to_string()))
+                            {
+                                Ok(bundle) if !bundle.keyframes.is_empty() => {
+                                    session.timeline_frames = bundle.keyframes;
+                                    self.cursor_idx = session.timeline_frames.len() - 1;
+                                    let snap = session.timeline_frames[self.cursor_idx].clone();
+                                    *active_seed = snap.active_seed;
+                                    session.restore_snapshot_preserving_timeline(snap);
+                                    self.status_line = format!(
+                                        "✓ Imported {} keyframes ({})!",
+                                        session.timeline_frames.len(),
+                                        bundle.scenario_title
+                                    );
+                                    audio.play_ui(SfxCue::UiCardTurn);
+                                    scene_restored = true;
+                                }
+                                Ok(_) => self.status_line = "⚠ Timeline file contained 0 keyframes.".into(),
+                                Err(e) => self.status_line = format!("⚠ Import failed: {e}"),
                             }
-                            Ok(_) => self.status_line = "Timeline file contained 0 keyframes.".into(),
-                            Err(e) => self.status_line = format!("Import failed: {e}"),
                         }
                     }
                 });

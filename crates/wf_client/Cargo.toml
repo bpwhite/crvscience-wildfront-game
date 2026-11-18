@@ -29,6 +29,7 @@ serde.workspace = true
 anyhow.workspace = true
 log.workspace = true
 flate2 = "1.1"
+rfd.workspace = true
 
 [build-dependencies]
 wf_core.workspace = true

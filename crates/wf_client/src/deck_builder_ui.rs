@@ -25,7 +25,6 @@
 //! - 4 Tournament Presets + `.ron` Disk Save/Load + 1-Click `Launch Match With This Deck`
 
 use std::fs;
-use std::path::Path;
 use egui::{Align2, Color32, Frame, Margin, ProgressBar, RichText, ScrollArea, Stroke, Ui, Vec2};
 use ron::ser::{to_string_pretty, PrettyConfig};
 use wf_core::{
@@ -787,42 +786,70 @@ impl DeckBuilderScreen {
                             audio.play_ui(SfxCue::UiCardTurn);
                         }
                         if ui.button("📂 Load .ron").clicked() {
-                            let p = crate::paths::resolve_asset_path("compiled/custom_user_deck.ron")
-                                .unwrap_or_else(|| crate::paths::writable_app_path("assets/compiled/custom_user_deck.ron"));
-                            if let Ok(raw) = fs::read_to_string(&p) {
-                                if let Ok(loaded) = ron::from_str::<DeckList>(&raw) {
-                                    self.working_deck = loaded;
-                                    self.status_banner = format!("Loaded {}.", p.display());
-                                    audio.play_ui(SfxCue::UiCardTurn);
+                            let default_dir = crate::paths::writable_app_path("assets/compiled");
+                            if let Some(p) = rfd::FileDialog::new()
+                                .set_title("Load WildFront Tournament Deck (.RON)")
+                                .set_directory(&default_dir)
+                                .add_filter("RON Deck", &["ron"])
+                                .pick_file()
+                            {
+                                match fs::read_to_string(&p)
+                                    .map_err(|e| e.to_string())
+                                    .and_then(|raw| ron::from_str::<DeckList>(&raw).map_err(|e| e.to_string()))
+                                {
+                                    Ok(loaded) => {
+                                        self.working_deck = loaded;
+                                        self.status_banner = format!("✓ Loaded {}.", p.display());
+                                        audio.play_ui(SfxCue::UiCardTurn);
+                                    }
+                                    Err(e) => {
+                                        self.status_banner = format!("⚠ Load failed ({}): {e}", p.display());
+                                    }
                                 }
-                            } else {
-                                self.status_banner = "No custom_user_deck.ron saved yet—click Save .ron first!".into();
                             }
                         }
                         if ui.button("🖨 Export Deck STLs").on_hover_text("Export every card in this deck as a watertight 45mm-hex .STL with 2.80mm thick-wall V-cradles").clicked() {
                             let cfg = TabletopPrintConfig::default();
                             let slug = sanitize_filename_slug(&self.working_deck.deck_name);
-                            let out_dir = crate::paths::writable_app_path("exports/stl/decks").join(slug);
-                            let vox_dir = crate::paths::resolve_asset_path("vox")
-                                .unwrap_or_else(|| crate::paths::writable_app_path("assets/vox"));
-                            match export_deck_to_stl_folder(&self.working_deck, roster, &vox_dir, &out_dir, &cfg) {
-                                Ok(reps) => {
-                                    self.status_banner = format!("✓ Exported {} printable .STL miniatures + PRINT_MANIFEST.txt to {}!", reps.len(), out_dir.display());
-                                    audio.play_ui(SfxCue::BioHealChime);
-                                }
-                                Err(e) => {
-                                    self.status_banner = format!("⚠ STL export error: {e}");
+                            let default_dir = crate::paths::writable_app_path("exports/stl/decks").join(slug);
+                            let _ = crate::paths::ensure_parent_dir(&default_dir.join("placeholder"));
+                            if let Some(out_dir) = rfd::FileDialog::new()
+                                .set_title("Choose Output Folder for Deck .STL Miniatures")
+                                .set_directory(&default_dir)
+                                .pick_folder()
+                            {
+                                let vox_dir = crate::paths::resolve_asset_path("vox")
+                                    .unwrap_or_else(|| crate::paths::writable_app_path("assets/vox"));
+                                match export_deck_to_stl_folder(&self.working_deck, roster, &vox_dir, &out_dir, &cfg) {
+                                    Ok(reps) => {
+                                        self.status_banner = format!("✓ Exported {} printable .STL miniatures + PRINT_MANIFEST.txt to {}!", reps.len(), out_dir.display());
+                                        audio.play_ui(SfxCue::BioHealChime);
+                                    }
+                                    Err(e) => {
+                                        self.status_banner = format!("⚠ STL export error: {e}");
+                                    }
                                 }
                             }
                         }
                         if ui.button("💾 Save .ron").clicked() {
-                            let pretty = PrettyConfig::new().depth_limit(3);
-                            if let Ok(serialized) = to_string_pretty(&self.working_deck, pretty) {
-                                let p = crate::paths::writable_app_path("assets/compiled/custom_user_deck.ron");
-                                let _ = crate::paths::ensure_parent_dir(&p);
-                                match fs::write(&p, serialized) {
+                            let default_dir = crate::paths::writable_app_path("assets/compiled");
+                            if let Some(p) = rfd::FileDialog::new()
+                                .set_title("Save WildFront Tournament Deck (.RON)")
+                                .set_directory(&default_dir)
+                                .set_file_name("custom_user_deck.ron")
+                                .add_filter("RON Deck", &["ron"])
+                                .save_file()
+                            {
+                                let pretty = PrettyConfig::new().depth_limit(3);
+                                let res = (|| -> Result<(), String> {
+                                    let serialized = to_string_pretty(&self.working_deck, pretty)
+                                        .map_err(|e| e.to_string())?;
+                                    crate::paths::ensure_parent_dir(&p).map_err(|e| e.to_string())?;
+                                    fs::write(&p, serialized).map_err(|e| e.to_string())
+                                })();
+                                match res {
                                     Ok(()) => {
-                                        self.status_banner = format!("Saved custom deck to {}!", p.display());
+                                        self.status_banner = format!("✓ Saved custom deck to {}!", p.display());
                                         audio.play_ui(SfxCue::UiCardTurn);
                                     }
                                     Err(e) => {
@@ -872,7 +899,7 @@ impl DeckBuilderScreen {
                         self.working_deck.is_pure_biotype = true;
                         self.working_deck.secondary_faction = self.working_deck.primary_faction;
                     }
-                    if ui.selectable_label(!is_pure, "🧬 Hybrid Bio-Type (2 Organisms)").on_hover_text("Combine 2 Organism Bio-Types for dual synergy doctrines").clicked() {
+                    if ui.selectable_label(!is_pure, "✦ Hybrid Bio-Type (2 Organisms)").on_hover_text("Combine 2 Organism Bio-Types for dual synergy doctrines").clicked() {
                         self.working_deck.is_pure_biotype = false;
                     }
 
@@ -925,7 +952,7 @@ impl DeckBuilderScreen {
                         audio.play_ui(SfxCue::BioHealChime);
                     }
 
-                    if ui.button("🧹 Trim Off-Faction").clicked() {
+                    if ui.button("✖ Trim Off-Faction").clicked() {
                         self.prune_illegal_faction_cards(roster);
                         audio.play_ui(SfxCue::UiCardTurn);
                     }

@@ -28,6 +28,7 @@ pub fn exe_dir() -> PathBuf {
 }
 
 /// Resolves an existing `assets/` directory from CWD, `<exe_dir>/assets`, or workspace root.
+#[allow(dead_code)]
 pub fn resolve_asset_dir() -> Option<PathBuf> {
     let mut candidates = vec![PathBuf::from("assets"), exe_dir().join("assets")];
     if let Some(manifest) = option_env!("CARGO_MANIFEST_DIR") {
@@ -72,13 +73,10 @@ fn read_first_existing_font(paths: &[&str]) -> Option<Vec<u8>> {
     paths.iter().find_map(|p| fs::read(p).ok())
 }
 
-/// Installs OS system UI, monospace, and symbol fallback fonts into `egui::Context`
-/// when `egui` compiles with `FontDefinitions::default().font_data` empty (`egui 0.37`).
+/// Installs OS system UI, monospace, symbol, and emoji fallback fonts into `egui::Context`
+/// while preserving `egui` default fallback glyphs when available.
 pub fn install_ui_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    if !fonts.font_data.is_empty() {
-        return;
-    }
 
     let sans_candidates = [
         r"C:\Windows\Fonts\segoeui.ttf",
@@ -103,55 +101,130 @@ pub fn install_ui_fonts(ctx: &egui::Context) {
     ];
     let sym_candidates = [
         r"C:\Windows\Fonts\seguisym.ttf",
-        r"C:\Windows\Fonts\seguiemj.ttf",
         "/System/Library/Fonts/Apple Symbols.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+        "/usr/share/fonts/TTF/NotoSansSymbols2-Regular.ttf",
     ];
+    let emoji_candidates = [
+        r"C:\Windows\Fonts\seguiemj.ttf",
+        "/System/Library/Fonts/Apple Color Emoji.ttc",
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+    ];
+
+    let mut registered_any = false;
 
     if let Some(bytes) = read_first_existing_font(&sans_candidates) {
         fonts
             .font_data
             .insert("ui-sans".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
-        fonts
+        let prop = fonts
             .families
             .entry(egui::FontFamily::Proportional)
-            .or_default()
-            .push("ui-sans".to_owned());
+            .or_default();
+        if !prop.iter().any(|n| n == "ui-sans") {
+            prop.insert(0, "ui-sans".to_owned());
+        }
+        registered_any = true;
     }
+
     if let Some(bytes) = read_first_existing_font(&mono_candidates) {
         fonts
             .font_data
             .insert("ui-mono".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
-        fonts
+        let mono = fonts
             .families
             .entry(egui::FontFamily::Monospace)
-            .or_default()
-            .push("ui-mono".to_owned());
+            .or_default();
+        if !mono.iter().any(|n| n == "ui-mono") {
+            mono.insert(0, "ui-mono".to_owned());
+        }
+        registered_any = true;
     }
+
     if fonts.font_data.contains_key("ui-sans") {
-        fonts
+        let mono = fonts
             .families
             .entry(egui::FontFamily::Monospace)
-            .or_default()
-            .push("ui-sans".to_owned());
+            .or_default();
+        if !mono.iter().any(|n| n == "ui-sans") {
+            let pos = if mono.first().map(|s| s.as_str()) == Some("ui-mono") { 1 } else { 0 };
+            mono.insert(pos.min(mono.len()), "ui-sans".to_owned());
+        }
     }
+
     if let Some(bytes) = read_first_existing_font(&sym_candidates) {
         fonts
             .font_data
             .insert("ui-sym".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
-        fonts
+        let prop = fonts
             .families
             .entry(egui::FontFamily::Proportional)
-            .or_default()
-            .push("ui-sym".to_owned());
-        fonts
+            .or_default();
+        if !prop.iter().any(|n| n == "ui-sym") {
+            // Place ui-sym right after ui-sans (and before built-in incomplete emoji fonts)
+            let idx = if prop.first().map(|s| s.as_str()) == Some("ui-sans") { 1 } else { 0 };
+            prop.insert(idx.min(prop.len()), "ui-sym".to_owned());
+        }
+        let mono = fonts
             .families
             .entry(egui::FontFamily::Monospace)
-            .or_default()
-            .push("ui-sym".to_owned());
+            .or_default();
+        if !mono.iter().any(|n| n == "ui-sym") {
+            mono.push("ui-sym".to_owned());
+        }
+        registered_any = true;
     }
 
-    if !fonts.font_data.is_empty() {
+    if let Some(bytes) = read_first_existing_font(&emoji_candidates) {
+        fonts
+            .font_data
+            .insert("ui-emoji".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
+        let prop = fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default();
+        if !prop.iter().any(|n| n == "ui-emoji") {
+            prop.push("ui-emoji".to_owned());
+        }
+        let mono = fonts
+            .families
+            .entry(egui::FontFamily::Monospace)
+            .or_default();
+        if !mono.iter().any(|n| n == "ui-emoji") {
+            mono.push("ui-emoji".to_owned());
+        }
+        registered_any = true;
+    }
+
+    if registered_any {
         ctx.set_fonts(fonts);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn install_ui_fonts_registers_os_fonts_even_with_default_fonts_enabled() {
+        let ctx = egui::Context::default();
+        install_ui_fonts(&ctx);
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+        out.textures_delta.clear();
+
+        // On Windows/Linux/macOS with system fonts, ui-sans and ui-sym should be active in Proportional
+        ctx.fonts(|f| {
+            let fam = f.definitions().families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
+            if Path::new(r"C:\Windows\Fonts\segoeui.ttf").exists() {
+                assert_eq!(fam.first().map(|s| s.as_str()), Some("ui-sans"));
+            }
+            if Path::new(r"C:\Windows\Fonts\seguisym.ttf").exists() {
+                assert!(fam.iter().any(|s| s == "ui-sym"), "ui-sym must be registered in Proportional family");
+                assert!(f.definitions().font_data.contains_key("ui-sym"));
+            }
+            if Path::new(r"C:\Windows\Fonts\seguiemj.ttf").exists() {
+                assert!(f.definitions().font_data.contains_key("ui-emoji"));
+            }
+        });
     }
 }

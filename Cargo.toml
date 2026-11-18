@@ -42,8 +42,15 @@ egui-winit = "0.37.0"
 kira = "0.12"
 pollster = "0.4"
 log = "0.4"
+rfd = "0.15"
 
 # Internal workspace crates
 wf_core = { path = "crates/wf_core" }
 wf_assets = { path = "crates/wf_assets" }
 wf_sim = { path = "crates/wf_sim" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

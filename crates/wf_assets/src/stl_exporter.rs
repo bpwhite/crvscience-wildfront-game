@@ -26,6 +26,7 @@ use std::collections::VecDeque;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use wf_core::{DeckList, RosterManifest, UnitCardDef};
@@ -719,92 +720,13 @@ pub fn export_vox_with_config(
     repair_2manifold_saddles(&mut occ, sx, sy, sz);
     keep_only_z0_grounded_component(&mut occ, sx, sy, sz);
 
-    // 5. Extract T-junction-free watertight 2-manifold boundary triangles & compute bounding box
-    let is_solid = |x: isize, y: isize, z: isize| -> bool {
-        if x < 0 || y < 0 || z < 0 || (x as usize) >= sx || (y as usize) >= sy || (z as usize) >= sz {
-            false
-        } else {
-            occ[(x as usize) * stride_x + (y as usize) * stride_y + (z as usize)]
-        }
-    };
-
-    let mut tris: Vec<([f32; 3], [[f32; 3]; 3])> = Vec::with_capacity(140_000);
-    let mut bmin = [f32::MAX; 3];
-    let mut bmax = [f32::MIN; 3];
-
-    for x in 0..sx as isize {
-        for y in 0..sy as isize {
-            for z in 0..sz as isize {
-                if !is_solid(x, y, z) {
-                    continue;
-                }
-                let (x0, x1) = (x as f32 * mm_per_vox - cx_mm, (x + 1) as f32 * mm_per_vox - cx_mm);
-                let (y0, y1) = (y as f32 * mm_per_vox - cy_mm, (y + 1) as f32 * mm_per_vox - cy_mm);
-                let (z0, z1) = (z as f32 * mm_per_vox, (z + 1) as f32 * mm_per_vox);
-
-                bmin[0] = bmin[0].min(x0); bmax[0] = bmax[0].max(x1);
-                bmin[1] = bmin[1].min(y0); bmax[1] = bmax[1].max(y1);
-                bmin[2] = bmin[2].min(z0); bmax[2] = bmax[2].max(z1);
-
-                if !is_solid(x, y, z + 1) {
-                    tris.push(([0.0, 0.0, 1.0], [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1]]));
-                    tris.push(([0.0, 0.0, 1.0], [[x0, y0, z1], [x1, y1, z1], [x0, y1, z1]]));
-                }
-                if !is_solid(x, y, z - 1) {
-                    tris.push(([0.0, 0.0, -1.0], [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0]]));
-                    tris.push(([0.0, 0.0, -1.0], [[x0, y0, z0], [x1, y1, z0], [x1, y0, z0]]));
-                }
-                if !is_solid(x + 1, y, z) {
-                    tris.push(([1.0, 0.0, 0.0], [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1]]));
-                    tris.push(([1.0, 0.0, 0.0], [[x1, y0, z0], [x1, y1, z1], [x1, y0, z1]]));
-                }
-                if !is_solid(x - 1, y, z) {
-                    tris.push(([-1.0, 0.0, 0.0], [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1]]));
-                    tris.push(([-1.0, 0.0, 0.0], [[x0, y0, z0], [x0, y1, z1], [x0, y1, z0]]));
-                }
-                if !is_solid(x, y + 1, z) {
-                    tris.push(([0.0, 1.0, 0.0], [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1]]));
-                    tris.push(([0.0, 1.0, 0.0], [[x0, y1, z0], [x1, y1, z1], [x1, y1, z0]]));
-                }
-                if !is_solid(x, y - 1, z) {
-                    tris.push(([0.0, -1.0, 0.0], [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1]]));
-                    tris.push(([0.0, -1.0, 0.0], [[x0, y0, z0], [x1, y0, z1], [x0, y0, z1]]));
-                }
-            }
-        }
-    }
+    // 5. Extract T-junction-free coplanar-merged watertight 2-manifold boundary triangles & bounding box
+    let (tris, bmin, bmax) =
+        build_coplanar_voxel_stl_triangles(&occ, sx, sy, sz, mm_per_vox, cx_mm, cy_mm);
 
     // 6. Fast single-allocation binary `.STL` write
-    if let Some(parent) = out_stl.parent() {
-        fs::create_dir_all(parent)?;
-    }
     let label = card.map_or_else(|| baked.model_name.clone(), |c| c.card_key.clone());
-    let mut raw_buf = Vec::with_capacity(84 + tris.len() * 50);
-    let mut hdr = [0u8; 80];
-    let title_bytes = format!(
-        "Wildfront STL: {} | Wall {:.2}mm",
-        label, measured_wall_mm
-    );
-    let copy_len = title_bytes.len().min(79);
-    hdr[..copy_len].copy_from_slice(&title_bytes.as_bytes()[..copy_len]);
-    raw_buf.extend_from_slice(&hdr);
-    raw_buf.extend_from_slice(&(tris.len() as u32).to_le_bytes());
-
-    for (n, verts) in &tris {
-        for c in n {
-            raw_buf.extend_from_slice(&c.to_le_bytes());
-        }
-        for v in verts {
-            for c in v {
-                raw_buf.extend_from_slice(&c.to_le_bytes());
-            }
-        }
-        raw_buf.extend_from_slice(&0u16.to_le_bytes());
-    }
-
-    let mut f = BufWriter::new(File::create(out_stl)?);
-    f.write_all(&raw_buf)?;
-    f.flush()?;
+    write_binary_stl_triangles(out_stl, &label, measured_wall_mm, &tris)?;
 
     let footprint = if tris.is_empty() {
         (0.0, 0.0, 0.0)
@@ -823,6 +745,361 @@ pub fn export_vox_with_config(
         min_center_wall_mm: measured_wall_mm,
         footprint_mm: footprint,
     })
+}
+
+/// Writes an array of `(normal, [v0, v1, v2])` triangles to a binary `.STL` file.
+pub fn write_binary_stl_triangles(
+    out_stl: &Path,
+    label: &str,
+    measured_wall_mm: f32,
+    tris: &[([f32; 3], [[f32; 3]; 3])],
+) -> Result<()> {
+    if let Some(parent) = out_stl.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    let mut raw_buf = Vec::with_capacity(84 + tris.len() * 50);
+    let mut hdr = [0u8; 80];
+    let title_bytes = format!(
+        "Wildfront STL: {} | Wall {:.2}mm",
+        label, measured_wall_mm
+    );
+    let copy_len = title_bytes.len().min(79);
+    hdr[..copy_len].copy_from_slice(&title_bytes.as_bytes()[..copy_len]);
+    raw_buf.extend_from_slice(&hdr);
+    raw_buf.extend_from_slice(&(tris.len() as u32).to_le_bytes());
+
+    for (n, verts) in tris {
+        for c in n {
+            raw_buf.extend_from_slice(&c.to_le_bytes());
+        }
+        for v in verts {
+            for c in v {
+                raw_buf.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        raw_buf.extend_from_slice(&0u16.to_le_bytes());
+    }
+
+    let mut f = BufWriter::new(File::create(out_stl)?);
+    f.write_all(&raw_buf)?;
+    f.flush()?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FaceDir6 {
+    PosZ,
+    NegZ,
+    PosX,
+    NegX,
+    PosY,
+    NegY,
+}
+
+impl FaceDir6 {
+    const ALL: [Self; 6] = [
+        Self::PosZ,
+        Self::NegZ,
+        Self::PosX,
+        Self::NegX,
+        Self::PosY,
+        Self::NegY,
+    ];
+
+    fn normal(self) -> [f32; 3] {
+        match self {
+            Self::PosZ => [0.0, 0.0, 1.0],
+            Self::NegZ => [0.0, 0.0, -1.0],
+            Self::PosX => [1.0, 0.0, 0.0],
+            Self::NegX => [-1.0, 0.0, 0.0],
+            Self::PosY => [0.0, 1.0, 0.0],
+            Self::NegY => [0.0, -1.0, 0.0],
+        }
+    }
+
+    fn flip_winding(self) -> bool {
+        matches!(self, Self::NegZ | Self::NegX | Self::PosY)
+    }
+
+    fn plane_w(self, w: usize) -> usize {
+        match self {
+            Self::PosZ | Self::PosX | Self::PosY => w + 1,
+            Self::NegZ | Self::NegX | Self::NegY => w,
+        }
+    }
+
+    fn to_grid_corner(self, plane_w: usize, u: usize, v: usize) -> (usize, usize, usize) {
+        match self {
+            Self::PosZ | Self::NegZ => (u, v, plane_w),
+            Self::PosX | Self::NegX => (plane_w, u, v),
+            Self::PosY | Self::NegY => (u, plane_w, v),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct GreedyRect {
+    dir: FaceDir6,
+    plane_w: usize,
+    u0: usize,
+    u1: usize,
+    v0: usize,
+    v1: usize,
+}
+
+/// Builds T-junction-free greedy coplanar-merged boundary triangles for a 2-manifold voxel occupancy grid.
+///
+/// Pass 1 greedily merges maximal coplanar rectangles per axis slice across all 6 face directions.
+/// Pass 2 marks every rectangle corner on the `(sx+1)*(sy+1)*(sz+1)` vertex lattice and subdivides
+/// touching edges at shared corner vertices before triangulating, preserving strict 2-manifold half-edges,
+/// exact signed volume, bounding boxes, and outward face normals.
+pub fn build_coplanar_voxel_stl_triangles(
+    occ: &[bool],
+    sx: usize,
+    sy: usize,
+    sz: usize,
+    mm_per_vox: f32,
+    cx_mm: f32,
+    cy_mm: f32,
+) -> (Vec<([f32; 3], [[f32; 3]; 3])>, [f32; 3], [f32; 3]) {
+    if sx == 0 || sy == 0 || sz == 0 || occ.len() != sx * sy * sz {
+        return (Vec::new(), [0.0; 3], [0.0; 3]);
+    }
+    let stride_y = sz;
+    let stride_x = sy * sz;
+
+    let is_solid = |x: isize, y: isize, z: isize| -> bool {
+        if x < 0 || y < 0 || z < 0 || (x as usize) >= sx || (y as usize) >= sy || (z as usize) >= sz {
+            false
+        } else {
+            occ[(x as usize) * stride_x + (y as usize) * stride_y + (z as usize)]
+        }
+    };
+
+    let mut bmin = [f32::MAX; 3];
+    let mut bmax = [f32::MIN; 3];
+    let mut any_solid = false;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                if occ[x * stride_x + y * stride_y + z] {
+                    any_solid = true;
+                    let x0 = x as f32 * mm_per_vox - cx_mm;
+                    let x1 = (x + 1) as f32 * mm_per_vox - cx_mm;
+                    let y0 = y as f32 * mm_per_vox - cy_mm;
+                    let y1 = (y + 1) as f32 * mm_per_vox - cy_mm;
+                    let z0 = z as f32 * mm_per_vox;
+                    let z1 = (z + 1) as f32 * mm_per_vox;
+                    bmin[0] = bmin[0].min(x0);
+                    bmax[0] = bmax[0].max(x1);
+                    bmin[1] = bmin[1].min(y0);
+                    bmax[1] = bmax[1].max(y1);
+                    bmin[2] = bmin[2].min(z0);
+                    bmax[2] = bmax[2].max(z1);
+                }
+            }
+        }
+    }
+    if !any_solid {
+        return (Vec::new(), [0.0; 3], [0.0; 3]);
+    }
+
+    // Pass 1: Greedy maximal coplanar rectangles per slice across all 6 directions
+    let mut rects: Vec<GreedyRect> = Vec::with_capacity(sx * sy + sy * sz + sx * sz);
+    for dir in FaceDir6::ALL {
+        let (w_max, u_max, v_max) = match dir {
+            FaceDir6::PosZ | FaceDir6::NegZ => (sz, sx, sy),
+            FaceDir6::PosX | FaceDir6::NegX => (sx, sy, sz),
+            FaceDir6::PosY | FaceDir6::NegY => (sy, sx, sz),
+        };
+        let mut mask = vec![false; u_max * v_max];
+        for w in 0..w_max {
+            mask.fill(false);
+            let mut has_exposed = false;
+            for v in 0..v_max {
+                for u in 0..u_max {
+                    let (cur_solid, nbr_solid) = match dir {
+                        FaceDir6::PosZ => (
+                            is_solid(u as isize, v as isize, w as isize),
+                            is_solid(u as isize, v as isize, w as isize + 1),
+                        ),
+                        FaceDir6::NegZ => (
+                            is_solid(u as isize, v as isize, w as isize),
+                            is_solid(u as isize, v as isize, w as isize - 1),
+                        ),
+                        FaceDir6::PosX => (
+                            is_solid(w as isize, u as isize, v as isize),
+                            is_solid(w as isize + 1, u as isize, v as isize),
+                        ),
+                        FaceDir6::NegX => (
+                            is_solid(w as isize, u as isize, v as isize),
+                            is_solid(w as isize - 1, u as isize, v as isize),
+                        ),
+                        FaceDir6::PosY => (
+                            is_solid(u as isize, w as isize, v as isize),
+                            is_solid(u as isize, w as isize + 1, v as isize),
+                        ),
+                        FaceDir6::NegY => (
+                            is_solid(u as isize, w as isize, v as isize),
+                            is_solid(u as isize, w as isize - 1, v as isize),
+                        ),
+                    };
+                    if cur_solid && !nbr_solid {
+                        mask[u + v * u_max] = true;
+                        has_exposed = true;
+                    }
+                }
+            }
+            if !has_exposed {
+                continue;
+            }
+            let plane_w = dir.plane_w(w);
+            for v in 0..v_max {
+                let mut u = 0;
+                while u < u_max {
+                    if !mask[u + v * u_max] {
+                        u += 1;
+                        continue;
+                    }
+                    let mut w_len = 1usize;
+                    while u + w_len < u_max && mask[(u + w_len) + v * u_max] {
+                        w_len += 1;
+                    }
+                    let mut h_len = 1usize;
+                    'expand_v: while v + h_len < v_max {
+                        let row_off = (v + h_len) * u_max;
+                        for du in 0..w_len {
+                            if !mask[u + du + row_off] {
+                                break 'expand_v;
+                            }
+                        }
+                        h_len += 1;
+                    }
+                    for dv in 0..h_len {
+                        let row_off = (v + dv) * u_max;
+                        for du in 0..w_len {
+                            mask[u + du + row_off] = false;
+                        }
+                    }
+                    rects.push(GreedyRect {
+                        dir,
+                        plane_w,
+                        u0: u,
+                        u1: u + w_len,
+                        v0: v,
+                        v1: v + h_len,
+                    });
+                    u += w_len;
+                }
+            }
+        }
+    }
+
+    // Pass 2: Mark all rectangle corner vertices on the (sx+1)*(sy+1)*(sz+1) grid
+    let vy_stride = sz + 1;
+    let vx_stride = (sy + 1) * vy_stride;
+    let mut is_corner = vec![false; (sx + 1) * vx_stride];
+    let mark_corner = |corners: &mut [bool], (gx, gy, gz): (usize, usize, usize)| {
+        corners[gx * vx_stride + gy * vy_stride + gz] = true;
+    };
+    let check_corner = |corners: &[bool], (gx, gy, gz): (usize, usize, usize)| -> bool {
+        corners[gx * vx_stride + gy * vy_stride + gz]
+    };
+
+    for r in &rects {
+        mark_corner(&mut is_corner, r.dir.to_grid_corner(r.plane_w, r.u0, r.v0));
+        mark_corner(&mut is_corner, r.dir.to_grid_corner(r.plane_w, r.u1, r.v0));
+        mark_corner(&mut is_corner, r.dir.to_grid_corner(r.plane_w, r.u1, r.v1));
+        mark_corner(&mut is_corner, r.dir.to_grid_corner(r.plane_w, r.u0, r.v1));
+    }
+
+    let to_world = |dir: FaceDir6, plane_w: usize, u: usize, v: usize| -> [f32; 3] {
+        let (gx, gy, gz) = dir.to_grid_corner(plane_w, u, v);
+        [
+            gx as f32 * mm_per_vox - cx_mm,
+            gy as f32 * mm_per_vox - cy_mm,
+            gz as f32 * mm_per_vox,
+        ]
+    };
+
+    let mut tris: Vec<([f32; 3], [[f32; 3]; 3])> = Vec::with_capacity(rects.len() * 3);
+    let mut bottom: Vec<(usize, usize)> = Vec::with_capacity(32);
+    let mut right: Vec<(usize, usize)> = Vec::with_capacity(32);
+    let mut top: Vec<(usize, usize)> = Vec::with_capacity(32);
+    let mut left: Vec<(usize, usize)> = Vec::with_capacity(32);
+
+    let emit_tri = |tris: &mut Vec<([f32; 3], [[f32; 3]; 3])>,
+                    dir: FaceDir6,
+                    plane_w: usize,
+                    a: (usize, usize),
+                    b: (usize, usize),
+                    c: (usize, usize)| {
+        let n = dir.normal();
+        let pa = to_world(dir, plane_w, a.0, a.1);
+        let pb = to_world(dir, plane_w, b.0, b.1);
+        let pc = to_world(dir, plane_w, c.0, c.1);
+        if dir.flip_winding() {
+            tris.push((n, [pa, pc, pb]));
+        } else {
+            tris.push((n, [pa, pb, pc]));
+        }
+    };
+
+    for r in &rects {
+        bottom.clear();
+        right.clear();
+        top.clear();
+        left.clear();
+
+        for u in r.u0..=r.u1 {
+            if check_corner(&is_corner, r.dir.to_grid_corner(r.plane_w, u, r.v0)) {
+                bottom.push((u, r.v0));
+            }
+            if check_corner(&is_corner, r.dir.to_grid_corner(r.plane_w, u, r.v1)) {
+                top.push((u, r.v1));
+            }
+        }
+        for v in r.v0..=r.v1 {
+            if check_corner(&is_corner, r.dir.to_grid_corner(r.plane_w, r.u0, v)) {
+                left.push((r.u0, v));
+            }
+            if check_corner(&is_corner, r.dir.to_grid_corner(r.plane_w, r.u1, v)) {
+                right.push((r.u1, v));
+            }
+        }
+
+        let p = bottom.len() - 1;
+        let q = top.len() - 1;
+        let l_cnt = left.len() - 1;
+        let s = right.len() - 1;
+
+        if p == 1 && q == 1 && l_cnt == 1 && s == 1 {
+            emit_tri(&mut tris, r.dir, r.plane_w, (r.u0, r.v0), (r.u1, r.v0), (r.u1, r.v1));
+            emit_tri(&mut tris, r.dir, r.plane_w, (r.u0, r.v0), (r.u1, r.v1), (r.u0, r.v1));
+        } else {
+            // 4-step T-junction-free corner-adjacent fan triangulation
+            // 1. Fan left[0..=l_cnt] from bottom[1]
+            for i in 0..l_cnt {
+                emit_tri(&mut tris, r.dir, r.plane_w, bottom[1], left[i + 1], left[i]);
+            }
+            // 2. Fan bottom[1..=p] from top[0]
+            for i in 1..p {
+                emit_tri(&mut tris, r.dir, r.plane_w, top[0], bottom[i], bottom[i + 1]);
+            }
+            // 3. Fan right[0..=s] from top[q-1]
+            for i in 0..s {
+                emit_tri(&mut tris, r.dir, r.plane_w, top[q - 1], right[i], right[i + 1]);
+            }
+            // 4. Fan top[0..=q-1] from right[0]
+            for j in 0..q.saturating_sub(1) {
+                emit_tri(&mut tris, r.dir, r.plane_w, right[0], top[j + 1], top[j]);
+            }
+        }
+    }
+
+    (tris, bmin, bmax)
 }
 
 /// Exports a specific `UnitCardDef` (using its exact `STR` & `ENC` stats to size the 45° V-cradles).
@@ -846,28 +1123,56 @@ pub fn export_deck_to_stl_folder(
     out_dir: &Path,
     cfg: &TabletopPrintConfig,
 ) -> Result<Vec<StlExportReport>> {
+    let cancel = AtomicBool::new(false);
+    let (reps, _) = export_deck_to_stl_folder_cancellable(
+        deck,
+        roster,
+        vox_dir,
+        out_dir,
+        cfg,
+        &cancel,
+        &mut |_, _, _| {},
+    )?;
+    Ok(reps)
+}
+
+/// Cancellable, progress-reporting variant of `export_deck_to_stl_folder` for background UI threads.
+pub fn export_deck_to_stl_folder_cancellable(
+    deck: &DeckList,
+    roster: &RosterManifest,
+    vox_dir: &Path,
+    out_dir: &Path,
+    cfg: &TabletopPrintConfig,
+    cancel: &AtomicBool,
+    on_progress: &mut dyn FnMut(usize, usize, &str),
+) -> Result<(Vec<StlExportReport>, bool)> {
     fs::create_dir_all(out_dir)?;
     let lookup = roster.index_by_key();
-    let mut reports = Vec::new();
+    let entries_to_export: Vec<_> = deck
+        .entries
+        .iter()
+        .filter(|e| e.quantity > 0)
+        .filter_map(|e| lookup.get(e.card_key.as_str()).map(|&card| (e.quantity, card)))
+        .collect();
+    let total = entries_to_export.len();
+    let mut reports = Vec::with_capacity(total);
     let mut total_d6_str = 0u32;
     let mut total_d6_mun = 0u32;
     let mut total_d10_str = 0u32;
     let mut total_d10_mun = 0u32;
 
-    for entry in &deck.entries {
-        if entry.quantity == 0 {
-            continue;
+    for (idx, (qty, card)) in entries_to_export.into_iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok((reports, true));
         }
-        let Some(card) = lookup.get(entry.card_key.as_str()) else {
-            continue;
-        };
+        on_progress(idx, total, &card.card_key);
         let safe = sanitize_filename_slug(&card.card_key);
         let fname = format!(
             "{}x_{}__STR{}_ENC{}.stl",
-            entry.quantity, safe, card.strength_hp, card.encumbrance
+            qty, safe, card.strength_hp, card.encumbrance
         );
         let rep = export_card_to_stl(card, vox_dir, &out_dir.join(fname), cfg)?;
-        let q = u32::from(entry.quantity);
+        let q = u32::from(qty);
         match rep.layout {
             ResolvedCradleLayout::None => {}
             ResolvedCradleLayout::SingleCenteredD6 { .. } => total_d6_str += q,
@@ -882,6 +1187,7 @@ pub fn export_deck_to_stl_folder(
             }
         }
         reports.push(rep);
+        on_progress(idx + 1, total, &card.card_key);
     }
 
     let mut manifest = String::new();
@@ -908,7 +1214,7 @@ pub fn export_deck_to_stl_folder(
         ));
     }
     fs::write(out_dir.join("PRINT_MANIFEST.txt"), manifest)?;
-    Ok(reports)
+    Ok((reports, false))
 }
 
 /// Backwards-compatible single `.vox` export using default `TabletopPrintConfig` with `target_hex_flat_mm`.
@@ -940,6 +1246,25 @@ pub fn export_vox_directory_with_config(
     out_stl_dir: &Path,
     cfg: &TabletopPrintConfig,
 ) -> Result<usize> {
+    let cancel = AtomicBool::new(false);
+    let (count, _) = export_vox_directory_cancellable(
+        vox_dir,
+        out_stl_dir,
+        cfg,
+        &cancel,
+        &mut |_, _, _| {},
+    )?;
+    Ok(count)
+}
+
+/// Cancellable, progress-reporting variant of `export_vox_directory_with_config`.
+pub fn export_vox_directory_cancellable(
+    vox_dir: &Path,
+    out_stl_dir: &Path,
+    cfg: &TabletopPrintConfig,
+    cancel: &AtomicBool,
+    on_progress: &mut dyn FnMut(usize, usize, &str),
+) -> Result<(usize, bool)> {
     fs::create_dir_all(out_stl_dir)?;
     let mut entries: Vec<_> = fs::read_dir(vox_dir)?
         .filter_map(|e| e.ok())
@@ -948,13 +1273,19 @@ pub fn export_vox_directory_with_config(
         .collect();
     entries.sort();
 
+    let total = entries.len();
     let mut count = 0usize;
-    for path in entries {
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("model");
+    for (idx, path) in entries.into_iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok((count, true));
+        }
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("model").to_string();
+        on_progress(idx, total, &stem);
         export_vox_with_config(&path, &out_stl_dir.join(format!("{stem}.stl")), None, cfg)?;
         count += 1;
+        on_progress(idx + 1, total, &stem);
     }
-    Ok(count)
+    Ok((count, false))
 }
 
 /// Exports all `hex_*.vox` modular tabletop terrain hexes (including `hex_04_hydro_breach_overlay`)
@@ -964,6 +1295,25 @@ pub fn export_terrain_hexes_with_config(
     out_stl_dir: &Path,
     config: &TabletopPrintConfig,
 ) -> Result<usize> {
+    let cancel = AtomicBool::new(false);
+    let (count, _) = export_terrain_hexes_cancellable(
+        vox_dir,
+        out_stl_dir,
+        config,
+        &cancel,
+        &mut |_, _, _| {},
+    )?;
+    Ok(count)
+}
+
+/// Cancellable, progress-reporting variant of `export_terrain_hexes_with_config`.
+pub fn export_terrain_hexes_cancellable(
+    vox_dir: &Path,
+    out_stl_dir: &Path,
+    config: &TabletopPrintConfig,
+    cancel: &AtomicBool,
+    on_progress: &mut dyn FnMut(usize, usize, &str),
+) -> Result<(usize, bool)> {
     fs::create_dir_all(out_stl_dir)?;
     let mut entries: Vec<_> = fs::read_dir(vox_dir)?
         .filter_map(|e| e.ok())
@@ -977,12 +1327,18 @@ pub fn export_terrain_hexes_with_config(
 
     let mut tile_cfg = *config;
     tile_cfg.cradle_mode = CradleMode::SculptOnlyNoCradles;
+    let total = entries.len();
     let mut count = 0usize;
-    for path in entries {
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("hex_tile");
+    for (idx, path) in entries.into_iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok((count, true));
+        }
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("hex_tile").to_string();
+        on_progress(idx, total, &stem);
         let out_p = out_stl_dir.join(format!("{stem}_{:.0}mm.stl", tile_cfg.target_hex_flat_mm));
         export_vox_with_config(&path, &out_p, None, &tile_cfg)?;
         count += 1;
+        on_progress(idx + 1, total, &stem);
     }
-    Ok(count)
+    Ok((count, false))
 }

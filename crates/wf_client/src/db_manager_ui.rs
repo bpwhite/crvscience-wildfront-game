@@ -162,7 +162,7 @@ impl DatabaseManagerStudio {
 
                     for (tab, lbl) in [
                         (DatabaseTab::UnitCatalog, "📋 152-Card Catalog"),
-                        (DatabaseTab::FactionDoctrines, "🧬 10 Faction Doctrines"),
+                        (DatabaseTab::FactionDoctrines, "✦ 10 Faction Doctrines"),
                         (DatabaseTab::CommandCards, "🎴 3 Command Cards"),
                         (DatabaseTab::ClassMatrix, "⚔ Combat Class Matrix"),
                     ] {
@@ -178,6 +178,62 @@ impl DatabaseManagerStudio {
                                 .small()
                                 .color(Color32::from_rgb(168, 204, 218)),
                         );
+                        if ui.small_button("💾 Export .RON").clicked() {
+                            if let Some(out_p) = rfd::FileDialog::new()
+                                .set_title("Export WildFront Master Roster (.RON)")
+                                .add_filter("RON Roster", &["ron"])
+                                .set_file_name("master_roster.ron")
+                                .save_file()
+                            {
+                                let res = (|| -> Result<(), String> {
+                                    ensure_parent_dir(&out_p).map_err(|e| e.to_string())?;
+                                    let pretty = ron::ser::to_string_pretty(
+                                        roster,
+                                        ron::ser::PrettyConfig::default(),
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                    std::fs::write(&out_p, pretty).map_err(|e| e.to_string())
+                                })();
+                                match res {
+                                    Ok(()) => {
+                                        self.db_status_msg = format!("✓ Exported roster to {}", out_p.display());
+                                        audio.play_ui(SfxCue::BioHealChime);
+                                    }
+                                    Err(e) => {
+                                        self.db_status_msg = format!("⚠ Roster export error: {e}");
+                                    }
+                                }
+                            }
+                        }
+                        if ui.small_button("📂 Import .RON").clicked() {
+                            if let Some(in_p) = rfd::FileDialog::new()
+                                .set_title("Import WildFront Master Roster (.RON)")
+                                .add_filter("RON Roster", &["ron"])
+                                .pick_file()
+                            {
+                                match std::fs::read_to_string(&in_p)
+                                    .map_err(|e| e.to_string())
+                                    .and_then(|raw| ron::from_str::<RosterManifest>(&raw).map_err(|e| e.to_string()))
+                                {
+                                    Ok(loaded) if !loaded.units.is_empty() => {
+                                        *roster = loaded;
+                                        self.selected_card_key = roster.units[0].card_key.clone();
+                                        self.db_status_msg = format!(
+                                            "✓ Imported {} units from {}",
+                                            roster.units.len(),
+                                            in_p.display()
+                                        );
+                                        audio.play_ui(SfxCue::UiCardTurn);
+                                    }
+                                    Ok(_) => {
+                                        self.db_status_msg = "⚠ Roster file contained 0 units.".into();
+                                    }
+                                    Err(e) => {
+                                        self.db_status_msg = format!("⚠ Roster import error: {e}");
+                                    }
+                                }
+                            }
+                        }
                     });
                 });
                 ui.separator();
@@ -521,7 +577,7 @@ impl DatabaseManagerStudio {
                                             audio.play_ui(SfxCue::UiCardTurn);
                                             self.db_status_msg = format!("Added {} to active Deck Builder!", card_clone.card_key);
                                         }
-                                        if ui.button("🧬 Clone Card").clicked() {
+                                        if ui.button("✦ Clone Card").clicked() {
                                             clone_requested = true;
                                         }
                                         if ui.button("🗑 Delete").clicked() {
@@ -618,19 +674,35 @@ impl DatabaseManagerStudio {
                                         if ui.button("💾 Save Changes to SQLite DB + Sync .ron").clicked() {
                                             let db_p = resolve_asset_path("compiled/wildfront_roster.db")
                                                 .unwrap_or_else(|| writable_app_path("assets/compiled/wildfront_roster.db"));
-                                            let _ = ensure_parent_dir(&db_p);
-                                            match save_unit_to_sqlite(&db_p, &card_clone) {
-                                                Ok(_) => {
-                                                    if let Ok(pretty) = ron::ser::to_string_pretty(roster, ron::ser::PrettyConfig::default()) {
-                                                        let ron_out = writable_app_path("assets/compiled/master_roster.ron");
-                                                        let _ = ensure_parent_dir(&ron_out);
-                                                        let _ = std::fs::write(ron_out, pretty);
-                                                    }
-                                                    self.db_status_msg = format!("✓ Saved '{}' ({} pts) to {}!", card_clone.card_key, card_clone.deck_points, db_p.display());
+                                            let ron_out = writable_app_path("assets/compiled/master_roster.ron");
+                                            let save_res = (|| -> Result<(), String> {
+                                                ensure_parent_dir(&db_p)
+                                                    .map_err(|e| format!("DB dir error: {e}"))?;
+                                                save_unit_to_sqlite(&db_p, &card_clone)
+                                                    .map_err(|e| format!("SQLite save error: {e}"))?;
+                                                let pretty = ron::ser::to_string_pretty(
+                                                    roster,
+                                                    ron::ser::PrettyConfig::default(),
+                                                )
+                                                .map_err(|e| format!("RON serialize error: {e}"))?;
+                                                ensure_parent_dir(&ron_out)
+                                                    .map_err(|e| format!("RON dir error: {e}"))?;
+                                                std::fs::write(&ron_out, pretty)
+                                                    .map_err(|e| format!("RON write error ({}): {e}", ron_out.display()))
+                                            })();
+                                            match save_res {
+                                                Ok(()) => {
+                                                    self.db_status_msg = format!(
+                                                        "✓ Saved '{}' ({} pts) to {} & {}!",
+                                                        card_clone.card_key,
+                                                        card_clone.deck_points,
+                                                        db_p.display(),
+                                                        ron_out.display()
+                                                    );
                                                     audio.play_ui(SfxCue::BioHealChime);
                                                 }
                                                 Err(e) => {
-                                                    self.db_status_msg = format!("⚠ SQLite save error: {e}");
+                                                    self.db_status_msg = format!("⚠ {e}");
                                                 }
                                             }
                                         }
@@ -656,20 +728,32 @@ impl DatabaseManagerStudio {
                                     cloned.unit_name = format!("{} (Custom)", cloned.unit_name);
                                     let db_p = resolve_asset_path("compiled/wildfront_roster.db")
                                         .unwrap_or_else(|| writable_app_path("assets/compiled/wildfront_roster.db"));
-                                    let _ = ensure_parent_dir(&db_p);
-                                    let _ = save_unit_to_sqlite(&db_p, &cloned);
+                                    let clone_res = ensure_parent_dir(&db_p)
+                                        .map_err(|e| format!("DB dir error: {e}"))
+                                        .and_then(|_| {
+                                            save_unit_to_sqlite(&db_p, &cloned)
+                                                .map_err(|e| format!("SQLite clone error: {e}"))
+                                        });
                                     roster.units.push(cloned);
                                     self.selected_card_key = new_key;
                                     self.edit_mode = true;
-                                    self.db_status_msg = "Cloned card into SQLite DB—ready to edit!".to_string();
+                                    self.db_status_msg = match clone_res {
+                                        Ok(()) => "Cloned card into SQLite DB—ready to edit!".to_string(),
+                                        Err(e) => format!("Cloned in memory, but {e}"),
+                                    };
                                 } else if delete_requested && roster.units.len() > 1 {
                                     let key_del = card_clone.card_key.clone();
-                                    if let Some(db_p) = resolve_asset_path("compiled/wildfront_roster.db") {
-                                        let _ = delete_unit_from_sqlite(&db_p, &key_del);
-                                    }
+                                    let del_err = if let Some(db_p) = resolve_asset_path("compiled/wildfront_roster.db") {
+                                        delete_unit_from_sqlite(&db_p, &key_del).err().map(|e| e.to_string())
+                                    } else {
+                                        None
+                                    };
                                     roster.units.retain(|u| u.card_key != key_del);
                                     self.selected_card_key = roster.units[0].card_key.clone();
-                                    self.db_status_msg = format!("Deleted '{}' from SQLite DB.", key_del);
+                                    self.db_status_msg = match del_err {
+                                        None => format!("Deleted '{}' from SQLite DB.", key_del),
+                                        Some(e) => format!("Removed '{}' in memory, but SQLite delete failed: {e}", key_del),
+                                    };
                                 }
             }
 

@@ -106,6 +106,22 @@ pub enum BiomeSnapshot {
 }
 
 impl BattleHexMap {
+    /// Recomputes the 6-neighbor directional `cliff_edges` bitmask (`|Δelevation| >= 2`) for every tile.
+    pub fn recompute_cliff_masks(&mut self) {
+        let snapshot: HashMap<Hex, u8> = self.tiles.iter().map(|(&h, t)| (h, t.elevation)).collect();
+        for (&h, tile) in self.tiles.iter_mut() {
+            let mut mask = 0u8;
+            for (edge_idx, nb) in h.all_neighbors().into_iter().enumerate() {
+                if let Some(&nb_elev) = snapshot.get(&nb) {
+                    if tile.elevation.abs_diff(nb_elev) >= 2 {
+                        mask |= 1 << edge_idx;
+                    }
+                }
+            }
+            tile.cliff_edges = mask;
+        }
+    }
+
     /// Checks whether a unit with given locomotion traits can step from `from` to adjacent `to`.
     /// `amphibious_tier`: `0` = Terrestrial, `1` = Semi-Aquatic, `2` = Pure Aquatic.
     pub fn can_traverse(
