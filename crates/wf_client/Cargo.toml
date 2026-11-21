@@ -3,6 +3,8 @@ name = "wf_client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository = "https://github.com/bpwhite/crvscience-wildfront-game"
+homepage = "https://crvscience.com/apps"
 
 [[bin]]
 name = "wf_client"

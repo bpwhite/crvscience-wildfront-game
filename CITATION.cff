@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: "crvscience-wildfront-game"
+title: "WildFront BattleGrounds: Turn-Based Hex Strategy Game with Voxel Graphics and Procedural Map Generation"
 message: "If you use WildFront BattleGrounds or its validation telemetry in academic work, please cite both this software repository and its companion CRV Science Apps Preprint."
 type: software
 authors:
@@ -27,7 +27,7 @@ preferred-citation:
   notes: "Preprint ID: APP-PREPRINT-12"
 references:
   - type: article
-    title: "The CRV Science App Network: Seventeen Open-Source Rust Programs for Science, Data, and Simulation"
+    title: "The CRV Science App Network: Twenty Open-Source Rust Programs for Science, Data, and Simulation"
     authors:
       - family-names: "White"
         given-names: "Bryan P."

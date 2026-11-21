@@ -1,14 +1,14 @@
-# WildFront BattleGrounds — Complete Native Rust Voxel, Hex, Deck-Builder & Spatial Audio Engine (v5)
+# WildFront BattleGrounds — Complete Native Rust Voxel, Hex, Deck-Builder & Spatial Audio Engine (v3.4.1)
 
 ![WildFront BattleGrounds Headless Workbench](validation/headless_screenshot.png)
 
 > *"The year is 2072. Only six continents remain. The earth has been wracked by global warming, drought, and radiation following years of nuclear war..."*
 
-## Complete v5 Feature Set
+## Complete v3.4.1 Feature Set
 1. **Interactive `egui 0.37` 250-Point Two-Faction Deck Builder (`crates/wf_client/src/deck_builder_ui.rs`)**:
    - Press **`B`** or click **`🃏 Deck Builder (B)`** in the Top Command Bar to open the full-screen Deck Builder.
    - Choose any 2 non-Human Bio-Factions (`Mammal`, `Reptile`, `Plant`, `Bird`, `Arachnid`, `Insect`, `Fish`, `Cnidarian`, `Amphibian`) alongside always-unlocked `Human` Core Infrastructure.
-   - Search & filter all **133 balanced cards**, inspect Bio (`Hospital`) & Mech (`Factory`) Graveyard synergy counts, load 4 built-in tournament presets (`Plant+Cnidarian`, `Mammal+Reptile`, `Fish+Amphibian`, `Bird+Arachnid`), save/load `.ron` custom decks (`assets/compiled/custom_user_deck.ron`), and click **`⚔ Launch Match With This Deck`**!
+   - Search & filter all **152 balanced cards**, inspect Bio (`Hospital`) & Mech (`Factory`) Graveyard synergy counts, load 4 built-in tournament presets (`Plant+Cnidarian`, `Mammal+Reptile`, `Fish+Amphibian`, `Bird+Arachnid`), save/load `.ron` custom decks (`assets/compiled/custom_user_deck.ron`), and click **`⚔ Launch Match With This Deck`**!
 2. **`kira 0.12.6` 3D Spatial Combat Audio (`crates/wf_client/src/audio.rs` + `assets/sfx/*.wav`)**:
    - Includes 8 synthesized 44.1 kHz 16-bit PCM `.wav` sound effects (`laser_pulse.wav`, `ballistic_volley.wav`, `melee_clash.wav`, `voxel_explosion.wav`, `orbital_deploy.wav`, `bio_heal_chime.wav`, `venom_snare.wav`, `ui_card_turn.wav`).
    - Projects world-space hex combat & deployment events into camera-view space via `SpatialTrackBuilder` for stereo panning & distance rolloff, with a Top Bar mute toggle & dB volume slider (and graceful headless fallback).
@@ -80,7 +80,7 @@ Total sculpted solid voxels: **336,891** across **22,619** sparse `4×4×4` GPU 
 - **Run All 19 Unit & Integration Tests**: `cargo test --workspace`
   - Covers 133-card roster & 25-rig slug mapping, 250-pt two-faction deck validation, Supply Chain BFS & severance, Psychic Control Node leash, D6 combat & Strength-Invariance damage, Hospital/Factory Graveyard queues, Excel & `.vox` RIFF asset compilation, Fog-of-War (`Radar Range` vs `Stealth` & `MountainPeak` LoS), `.ron` Quicksave/Quickload, deterministic Host/Client lockstep sync, and live `127.0.0.1` TCP socket framing.
 - **One-Command Local Test + Build + Launch**: `./scripts/verify_and_run.sh` (Linux/macOS) or `.\scripts\verify_and_run.ps1` (Windows PowerShell).
-- **GitHub Actions Cross-Platform Matrix (`.github/workflows/ci_and_release.yml`)**: Automatically tests and packages portable `Windows`, `macOS`, and `Linux` release archives on every push/PR and publishes GitHub Releases on `v*` tags.
+- **GitHub Actions Cross-Platform Matrix (`.github/workflows/ci.yml`)**: Automatically tests and packages portable `Windows`, `macOS`, and `Linux` release archives on every push/PR and publishes GitHub Releases on `v*` tags.
 
 
 ## v1.3.0 — High-Density Plinth-Free Micro-Voxel Overhaul & Compact Hex Scale

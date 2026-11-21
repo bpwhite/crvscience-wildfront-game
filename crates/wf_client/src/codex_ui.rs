@@ -48,7 +48,7 @@ impl CodexOverlay {
             return;
         }
         let mut open_flag = self.is_open;
-        Window::new("📖 WILDRONT BATTLEGROUNDS — 2072 FIELD MANUAL & CODEX (F1)")
+        Window::new("📖 WILDFRONT BATTLEGROUNDS — 2072 FIELD MANUAL & CODEX (F1)")
             .open(&mut open_flag)
             .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
             .collapsible(false)

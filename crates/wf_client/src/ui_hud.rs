@@ -188,6 +188,7 @@ pub fn draw_tactical_hud(
 
                 if ui
                     .button(if show_overlays { "🌐 Auras: ON" } else { "🌐 Auras: OFF" })
+                    .on_hover_text("Toggle Supply (Amber) & Psychic Control Node (Cyan) hex aura overlays (Tab)")
                     .clicked()
                 {
                     actions.toggle_overlays = true;
@@ -236,7 +237,11 @@ pub fn draw_tactical_hud(
                         }
                     });
 
-                if ui.button("🎲 Seed (N)").clicked() {
+                if ui
+                    .button("🎲 Seed (N)")
+                    .on_hover_text("Generate a new deterministic procedural map seed and restart scenario (N)")
+                    .clicked()
+                {
                     actions.roll_new_seed = true;
                 }
                 if ui

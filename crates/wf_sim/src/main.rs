@@ -154,7 +154,7 @@ fn main() -> Result<()> {
             let diff = parse_ai(&ai);
             let report = run_102_round_robin(&roster, diff, max_rounds);
             println!(
-                "=== WILDRONT v3.4.1 102-MATCH TOURNAMENT REPORT ({}) ===",
+                "=== WILDFRONT v3.4.1 102-MATCH TOURNAMENT REPORT ({}) ===",
                 report.ai_difficulty
             );
             println!(

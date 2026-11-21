@@ -2596,9 +2596,9 @@ impl ClientMatchState {
             self.match_outcome = Some(MatchOutcome {
                 winner_team: 1,
                 headline: if self.hotseat_mode {
-                    "PLAYER 1 VICTORY ON THE WILDRONT!".into()
+                    "PLAYER 1 VICTORY ON THE WILDFRONT!".into()
                 } else {
-                    "VICTORY ON THE WILDRONT!".into()
+                    "VICTORY ON THE WILDFRONT!".into()
                 },
                 reason: "Team 1 razed Team 2's Command Center and severed their continental bunker uplink.".into(),
                 turns_taken: self.turn_number,
@@ -2609,7 +2609,7 @@ impl ClientMatchState {
             self.match_outcome = Some(MatchOutcome {
                 winner_team: 2,
                 headline: if self.hotseat_mode {
-                    "PLAYER 2 VICTORY ON THE WILDRONT!".into()
+                    "PLAYER 2 VICTORY ON THE WILDFRONT!".into()
                 } else {
                     "COMMAND CENTER LOST — DEFEAT".into()
                 },

@@ -1192,7 +1192,7 @@ pub fn export_deck_to_stl_folder_cancellable(
 
     let mut manifest = String::new();
     manifest.push_str(&format!(
-        "WILDRONT BATTLEGROUNDS — 3D PRINT DECK MANIFEST\nDeck: {}\nHex Scale: {:.1}mm flat-to-flat | Min Center Wall Setting: {:.2}mm\n\n",
+        "WILDFRONT BATTLEGROUNDS — 3D PRINT DECK MANIFEST\nDeck: {}\nHex Scale: {:.1}mm flat-to-flat | Min Center Wall Setting: {:.2}mm\n\n",
         deck.deck_name,
         cfg.target_hex_flat_mm,
         cfg.center_wall_mm.max(MIN_PRINTABLE_CENTER_WALL_MM),

@@ -291,6 +291,43 @@ fn draw_about_modal(root_ui: &mut egui::Ui, show_about: &mut bool) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn handle_escape_priority(
+    show_about: &mut bool,
+    replay_open: &mut bool,
+    map_open: &mut bool,
+    db_open: &mut bool,
+    dice_open: &mut bool,
+    stl_open: &mut bool,
+    codex_open: &mut bool,
+    deck_open: &mut bool,
+    mode: &mut crate::game_session::CommandMode,
+    main_menu_has_started: bool,
+    main_menu_open: &mut bool,
+) {
+    if *show_about {
+        *show_about = false;
+    } else if *replay_open {
+        *replay_open = false;
+    } else if *map_open {
+        *map_open = false;
+    } else if *db_open {
+        *db_open = false;
+    } else if *dice_open {
+        *dice_open = false;
+    } else if *stl_open {
+        *stl_open = false;
+    } else if *codex_open {
+        *codex_open = false;
+    } else if *deck_open {
+        *deck_open = false;
+    } else if *mode != crate::game_session::CommandMode::Inspect {
+        *mode = crate::game_session::CommandMode::Inspect;
+    } else if main_menu_has_started {
+        *main_menu_open = !*main_menu_open;
+    }
+}
+
 impl WildfrontApp {
     fn update_hover_ray(&mut self) {
         let Some(eng) = self.engine.as_ref() else {
@@ -417,7 +454,15 @@ impl ApplicationHandler for WildfrontApp {
                                                 eng.upload_live_scene_and_vfx(&ht, &inst, &beams, beam_cnt, &debris, debris_cnt);
                                             }
                                         }
-                                    } else if !self.deck_builder.is_open && !self.main_menu.is_open && !self.codex.is_open && !self.stl_studio.is_open && !self.replay_theater.is_open {
+                                    } else if !self.deck_builder.is_open
+                                        && !self.main_menu.is_open
+                                        && !self.codex.is_open
+                                        && !self.stl_studio.is_open
+                                        && !self.replay_theater.is_open
+                                        && !self.show_about
+                                        && !self.db_manager.is_open
+                                        && !self.dice_roller.is_open
+                                    {
                                         self.session.handle_hex_click(clicked_hex, &mut self.vfx, &mut self.audio);
                                     }
                                 }
@@ -464,25 +509,19 @@ impl ApplicationHandler for WildfrontApp {
                 let pan_step = 1.25;
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::Escape) => {
-                        if self.replay_theater.is_open {
-                            self.replay_theater.is_open = false;
-                        } else if self.map_editor.is_open {
-                            self.map_editor.is_open = false;
-                        } else if self.db_manager.is_open {
-                            self.db_manager.is_open = false;
-                        } else if self.dice_roller.is_open {
-                            self.dice_roller.is_open = false;
-                        } else if self.stl_studio.is_open {
-                            self.stl_studio.is_open = false;
-                        } else if self.codex.is_open {
-                            self.codex.is_open = false;
-                        } else if self.deck_builder.is_open {
-                            self.deck_builder.is_open = false;
-                        } else if self.session.mode != crate::game_session::CommandMode::Inspect {
-                            self.session.mode = crate::game_session::CommandMode::Inspect;
-                        } else if self.main_menu.has_started_match {
-                            self.main_menu.is_open = !self.main_menu.is_open;
-                        }
+                        handle_escape_priority(
+                            &mut self.show_about,
+                            &mut self.replay_theater.is_open,
+                            &mut self.map_editor.is_open,
+                            &mut self.db_manager.is_open,
+                            &mut self.dice_roller.is_open,
+                            &mut self.stl_studio.is_open,
+                            &mut self.codex.is_open,
+                            &mut self.deck_builder.is_open,
+                            &mut self.session.mode,
+                            self.main_menu.has_started_match,
+                            &mut self.main_menu.is_open,
+                        );
                     }
                     PhysicalKey::Code(KeyCode::F1) => {
                         self.codex.is_open = !self.codex.is_open;
@@ -842,7 +881,7 @@ impl ApplicationHandler for WildfrontApp {
                     self.codex.is_open = !self.codex.is_open;
                 }
                 if hud_actions.open_about || menu_actions.open_about {
-                    self.show_about = true;
+                    self.show_about = !self.show_about;
                 }
                 if hud_actions.toggle_map_editor || menu_actions.open_map_editor {
                     self.map_editor.is_open = !self.map_editor.is_open;
@@ -1744,5 +1783,71 @@ mod tests {
             bytes.len(),
             rgba.len()
         );
+    }
+
+    #[test]
+    fn modal_escape_priority_dismisses_about_before_menu_or_command_mode() {
+        let mut show_about = true;
+        let mut replay_open = false;
+        let mut map_open = false;
+        let mut db_open = false;
+        let mut dice_open = false;
+        let mut stl_open = false;
+        let mut codex_open = false;
+        let mut deck_open = false;
+        let mut mode = crate::game_session::CommandMode::DeployHandCard(0);
+        let mut main_menu_open = true;
+
+        handle_escape_priority(
+            &mut show_about,
+            &mut replay_open,
+            &mut map_open,
+            &mut db_open,
+            &mut dice_open,
+            &mut stl_open,
+            &mut codex_open,
+            &mut deck_open,
+            &mut mode,
+            true,
+            &mut main_menu_open,
+        );
+        assert!(!show_about, "Escape must dismiss About modal first");
+        assert!(main_menu_open, "Main menu state must stay preserved while dismissing About");
+        assert_eq!(
+            mode,
+            crate::game_session::CommandMode::DeployHandCard(0),
+            "CommandMode must stay preserved while dismissing About"
+        );
+
+        handle_escape_priority(
+            &mut show_about,
+            &mut replay_open,
+            &mut map_open,
+            &mut db_open,
+            &mut dice_open,
+            &mut stl_open,
+            &mut codex_open,
+            &mut deck_open,
+            &mut mode,
+            true,
+            &mut main_menu_open,
+        );
+        assert_eq!(mode, crate::game_session::CommandMode::Inspect);
+        assert!(main_menu_open);
+
+        handle_escape_priority(
+            &mut show_about,
+            &mut replay_open,
+            &mut map_open,
+            &mut db_open,
+            &mut dice_open,
+            &mut stl_open,
+            &mut codex_open,
+            &mut deck_open,
+            &mut mode,
+            true,
+            &mut main_menu_open,
+        );
+        assert!(!main_menu_open);
     }
 }

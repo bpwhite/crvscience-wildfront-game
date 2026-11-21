@@ -72,7 +72,7 @@ impl MainMenuScreen {
             return act;
         }
 
-        Window::new("WILDRONT_2072_MAIN_MENU")
+        Window::new("WILDFRONT_2072_MAIN_MENU")
             .title_bar(false)
             .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
             .collapsible(false)
@@ -91,7 +91,7 @@ impl MainMenuScreen {
 
                 ui.vertical_centered(|ui| {
                     ui.label(
-                        RichText::new("WILDRONT BATTLEGROUNDS")
+                        RichText::new("WILDFRONT BATTLEGROUNDS")
                             .size(28.0)
                             .strong()
                             .color(Color32::from_rgb(242, 248, 252)),
