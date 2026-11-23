@@ -126,21 +126,51 @@ pub fn draw_tactical_hud(
                 if ui.button("📖 Codex (F1)").on_hover_text("Open Rules, Faction Doctrines & Hotkey Codex (F1)").clicked() {
                     actions.toggle_codex = true;
                 }
-                if ui.button("🖨 STL (F8)").on_hover_text("Open 3D Print Tabletop .STL Studio with Recessed Micro-Dice V-Cradles (F8)").clicked() {
-                    actions.toggle_stl_studio = true;
-                }
-                if ui.button("🎲 Dice (R)").on_hover_text("Open Interactive Simulated Combat Dice Roller & Round Logistics Hub (R)").clicked() {
-                    actions.toggle_dice_roller = true;
-                }
-                if ui.button("🗄 DB (F2)").on_hover_text("Open 152-Card & 170-Model Database Manager (F2)").clicked() {
-                    actions.toggle_db_manager = true;
-                }
-                if ui.button("🗺 Map (F3)").on_hover_text("Open Live 3D Hex Map & Scenario Editor Studio (F3)").clicked() {
-                    actions.toggle_map_editor = true;
-                }
-                if ui.button("🎬 Replay (F4)").on_hover_text("Open Turn-by-Turn Replay Scrubber, Tactical Undo & EHP Telemetry (F4)").clicked() {
-                    actions.toggle_replay_theater = true;
-                }
+                ui.menu_button("🛠 Studios ▾", |ui| {
+                    ui.set_min_width(230.0);
+                    if ui
+                        .button("🖨 3D Print .STL Studio (F8)")
+                        .on_hover_text("Export watertight 45mm tabletop .STL miniatures with recessed micro-dice V-cradles (F8)")
+                        .clicked()
+                    {
+                        actions.toggle_stl_studio = true;
+                        ui.close();
+                    }
+                    if ui
+                        .button("🗄 Unit & Model Database (F2)")
+                        .on_hover_text("Inspect and edit all 152 cards & 170 voxel models (F2)")
+                        .clicked()
+                    {
+                        actions.toggle_db_manager = true;
+                        ui.close();
+                    }
+                    if ui
+                        .button("🗺 3D Hex Map Studio (F3)")
+                        .on_hover_text("Live 3D Hex Map & Scenario Editor Studio (F3)")
+                        .clicked()
+                    {
+                        actions.toggle_map_editor = true;
+                        ui.close();
+                    }
+                    if ui
+                        .button("🎬 Replay & Telemetry (F4)")
+                        .on_hover_text("Turn-by-Turn Replay Scrubber, Tactical Undo & EHP Telemetry (F4)")
+                        .clicked()
+                    {
+                        actions.toggle_replay_theater = true;
+                        ui.close();
+                    }
+                    if ui
+                        .button("🎲 Combat Dice Simulator (R)")
+                        .on_hover_text("Interactive Simulated Combat Dice Roller & Round Logistics Hub (R)")
+                        .clicked()
+                    {
+                        actions.toggle_dice_roller = true;
+                        ui.close();
+                    }
+                })
+                .response
+                .on_hover_text("Open .STL Export (F8), Database (F2), Map Studio (F3), Replay (F4) & Dice Simulator (R)");
                 if ui.button("🌤 Sky (L)").on_hover_text("Cycle GPU Atmosphere: Clear Day / Dusk / Orbital Storm / Night Bio-Glow (L)").clicked() {
                     actions.cycle_atmosphere = true;
                 }
@@ -170,12 +200,20 @@ pub fn draw_tactical_hud(
                     RichText::new(format!("⚡ Actions: {}", act_rem))
                         .strong()
                         .color(Color32::from_rgb(82, 224, 245)),
+                )
+                .on_hover_text(
+                    "Actions Remaining this turn: 2 Base + up to +3 from active static Control Nodes (max 5/turn). \
+                     Spend 1 Action to Deploy, Move, Attack, Cast Ability, or Rest.",
                 );
                 ui.separator();
                 ui.label(
                     RichText::new(format!("📦 Munitions: {}", home_mun))
                         .strong()
                         .color(Color32::from_rgb(246, 178, 54)),
+                )
+                .on_hover_text(
+                    "Home Base Munitions: Command Center generates +5 Munitions per turn (+1 every 3rd turn for Africa/Asia). \
+                     Spent to deploy cards, supply attacks inside Supply Range, and run Hospital/Factory bays.",
                 );
                 ui.separator();
                 ui.label(
@@ -287,6 +325,11 @@ pub fn draw_tactical_hud(
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let end_enabled = session.can_local_player_act();
+                    let end_tip = if act_rem > 0 {
+                        "End current turn (Space). Prompts for confirmation while Actions remain."
+                    } else {
+                        "End current turn (Space)"
+                    };
                     if ui
                         .add_enabled(
                             end_enabled,
@@ -295,6 +338,7 @@ pub fn draw_tactical_hud(
                             )
                             .fill(Color32::from_rgb(196, 92, 28)),
                         )
+                        .on_hover_text(end_tip)
                         .clicked()
                     {
                         actions.end_turn = true;
@@ -879,4 +923,71 @@ Primal Surge: {}", bio_card.title, bio_card.primal_surge_effect))
     }
 
     actions
+}
+
+/// Confirmation dialog shown when the player initiates End Turn while unused Actions remain.
+pub fn draw_end_turn_confirm_modal(
+    root_ui: &mut Ui,
+    open: &mut bool,
+    actions_remaining: u8,
+) -> bool {
+    if !*open {
+        return false;
+    }
+    let mut confirmed = false;
+    let mut win_open = *open;
+    Window::new("⏭ CONFIRM END TURN")
+        .open(&mut win_open)
+        .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+        .collapsible(false)
+        .resizable(false)
+        .order(Order::Foreground)
+        .frame(
+            Frame::NONE
+                .fill(Color32::from_rgba_unmultiplied(12, 20, 28, 250))
+                .stroke(Stroke::new(2.0, Color32::from_rgb(246, 178, 54)))
+                .corner_radius(10)
+                .inner_margin(Margin::same(18)),
+        )
+        .show(root_ui.ctx(), |ui| {
+            ui.set_min_width(380.0);
+            ui.set_max_width(420.0);
+            ui.label(
+                RichText::new(format!(
+                    "You still have {actions_remaining} unused Action{} remaining this turn.",
+                    if actions_remaining == 1 { "" } else { "s" }
+                ))
+                .size(14.5)
+                .strong()
+                .color(Color32::from_rgb(250, 214, 98)),
+            );
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new("End your turn anyway and pass control?")
+                    .color(Color32::from_rgb(206, 222, 232)),
+            );
+            ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("⏭ End Turn Anyway (Enter)")
+                                .strong()
+                                .color(Color32::WHITE),
+                        )
+                        .fill(Color32::from_rgb(196, 92, 28)),
+                    )
+                    .clicked()
+                {
+                    confirmed = true;
+                }
+                if ui.button("↩ Keep Playing (Esc)").clicked() {
+                    *open = false;
+                }
+            });
+        });
+    if confirmed || !win_open {
+        *open = false;
+    }
+    confirmed
 }

@@ -96,10 +96,7 @@ pub fn begin_player_turn(
             unit.revealed_until_turn_start = false;
             unit.temp_move_bonus = 0;
             unit.temp_stealth = false;
-            if unit.blinded_this_turn {
-                unit.evade = unit.evade.saturating_add(1);
-                unit.blinded_this_turn = false;
-            }
+            unit.blinded_this_turn = false;
             if unit.rooted_turns > 0 {
                 unit.rooted_turns -= 1;
             }

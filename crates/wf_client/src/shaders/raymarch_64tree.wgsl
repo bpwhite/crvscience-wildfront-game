@@ -257,34 +257,34 @@ fn trace_unit_instance(inst_idx: u32, ro_w: vec3<f32>, rd_w: vec3<f32>, max_t_w:
             if (final_t_w < max_t_w) {
                 result.hit = true;
                 result.t_world = final_t_w;
-                let hit_n = normalize(-step_dir * last_mask);
-                result.normal = hit_n;
-                // Real-time 4-tap GPU Voxel Crevice Ambient Occlusion on hit tangent plane
-                let n_step = vec3<i32>(round(hit_n));
+                let hit_n_local = normalize(-step_dir * last_mask);
+                let w2v_rot = mat3x3<f32>(
+                    inst.world_to_voxel[0].xyz,
+                    inst.world_to_voxel[1].xyz,
+                    inst.world_to_voxel[2].xyz,
+                );
+                result.normal = normalize(transpose(w2v_rot) * hit_n_local);
+                // Real-time 8-tap GPU Voxel Crevice Ambient Occlusion across all X/Y/Z tangent faces
+                let n_step = vec3<i32>(round(hit_n_local));
                 let front_v = map_pos + n_step;
                 var occ_n = 0.0;
-                if (abs(n_step.y) > 0) {
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(1, 0, 0), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(-1, 0, 0), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(0, 0, 1), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(0, 0, -1), 0u) != 0u) { occ_n += 1.0; }
-                } else if (abs(n_step.x) > 0) {
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(0, 1, 0), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(0, -1, 0), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(0, 0, 1), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(0, 0, -1), 0u) != 0u) { occ_n += 1.0; }
-                } else {
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(1, 0, 0), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(-1, 0, 0), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(0, 1, 0), 0u) != 0u) { occ_n += 1.0; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(0, -1, 0), 0u) != 0u) { occ_n += 1.0; }
+                var t1 = vec3<i32>(1, 0, 0);
+                var t2 = vec3<i32>(0, 0, 1);
+                if (abs(n_step.x) > 0) {
+                    t1 = vec3<i32>(0, 1, 0);
+                    t2 = vec3<i32>(0, 0, 1);
+                } else if (abs(n_step.z) > 0) {
+                    t1 = vec3<i32>(1, 0, 0);
+                    t2 = vec3<i32>(0, 1, 0);
                 }
-                if (abs(n_step.y) > 0) {
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(1, 0, 1), 0u) != 0u) { occ_n += 0.55; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(-1, 0, 1), 0u) != 0u) { occ_n += 0.55; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(1, 0, -1), 0u) != 0u) { occ_n += 0.55; }
-                    if (sample_64tree(inst.root_node_index, front_v + vec3<i32>(-1, 0, -1), 0u) != 0u) { occ_n += 0.55; }
-                }
+                if (sample_64tree(inst.root_node_index, front_v + t1, 0u) != 0u) { occ_n += 1.0; }
+                if (sample_64tree(inst.root_node_index, front_v - t1, 0u) != 0u) { occ_n += 1.0; }
+                if (sample_64tree(inst.root_node_index, front_v + t2, 0u) != 0u) { occ_n += 1.0; }
+                if (sample_64tree(inst.root_node_index, front_v - t2, 0u) != 0u) { occ_n += 1.0; }
+                if (sample_64tree(inst.root_node_index, front_v + t1 + t2, 0u) != 0u) { occ_n += 0.55; }
+                if (sample_64tree(inst.root_node_index, front_v - t1 + t2, 0u) != 0u) { occ_n += 0.55; }
+                if (sample_64tree(inst.root_node_index, front_v + t1 - t2, 0u) != 0u) { occ_n += 0.55; }
+                if (sample_64tree(inst.root_node_index, front_v - t1 - t2, 0u) != 0u) { occ_n += 0.55; }
                 let vox_ao = clamp(1.0 - occ_n * 0.088, 0.46, 1.0);
                 if ((sample & 0x80000000u) != 0u) {
                     result.albedo = unpack_lod_linear(sample) * vox_ao;
@@ -420,6 +420,17 @@ fn biome_ground_palette(biome_id: u32, morph_id: u32, tier: i32) -> vec3<f32> {
     return base;
 }
 
+fn hex_surface_y(tile: GpuHexOverlay) -> f32 {
+    let morph_id = (tile.packed_flags >> 16u) & 255u;
+    if (tile.elevation_tier == -1) {
+        return select(-0.24, -0.46, morph_id == 3u);
+    }
+    if (morph_id == 8u) {
+        return -0.05;
+    }
+    return f32(tile.elevation_tier) * 0.55;
+}
+
 // Raymarches procedural stepped hexagonal terrain (biomes, plateaus, cliffs, rivers & hazards)
 fn trace_hex_terrain(ro: vec3<f32>, rd: vec3<f32>, max_t: f32) -> VoxelHit {
     var out: VoxelHit;
@@ -431,35 +442,61 @@ fn trace_hex_terrain(ro: vec3<f32>, rd: vec3<f32>, max_t: f32) -> VoxelHit {
     let t_bot = (-0.7 - ro.y) * inv_y;
     let t_enter = max(0.0, min(t_top, t_bot));
     let t_exit = min(max_t, max(t_top, t_bot));
-    if (rd.y >= 0.0 && ro.y > 3.4) {
+    if (t_exit < t_enter || (rd.y >= 0.0 && ro.y > 3.4)) {
         return out;
     }
 
     var t = t_enter;
+    var t_prev = t_enter;
     let dt = 0.06;
     var prev_pos = ro + rd * t;
     for (var i = 0u; i < 420u; i = i + 1u) {
         if (t > t_exit) { break; }
-        let p = ro + rd * t;
-        let hinfo = world_to_axial_hex(p.xz, cam.hex_radius);
-        let tile = lookup_hex_tile(i32(hinfo.x), i32(hinfo.y));
+        let p_coarse = ro + rd * t;
+        let hinfo_coarse = world_to_axial_hex(p_coarse.xz, cam.hex_radius);
+        let tile_coarse = lookup_hex_tile(i32(hinfo_coarse.x), i32(hinfo_coarse.y));
 
-        if (tile.elevation_tier >= -1) {
-            let biome_id = (tile.packed_flags >> 8u) & 255u;
-            let morph_id = (tile.packed_flags >> 16u) & 255u;
+        if (tile_coarse.elevation_tier >= -1) {
+            let surface_y_coarse = hex_surface_y(tile_coarse);
+            if (p_coarse.y <= surface_y_coarse) {
+                var t_hit = t;
+                var p = p_coarse;
+                var hinfo = hinfo_coarse;
+                var tile = tile_coarse;
+                var surface_y = surface_y_coarse;
+                if (t > t_enter + 1e-4) {
+                    var lo = t_prev;
+                    var hi = t;
+                    for (var b = 0u; b < 6u; b = b + 1u) {
+                        let mid = 0.5 * (lo + hi);
+                        let pm = ro + rd * mid;
+                        let hm = world_to_axial_hex(pm.xz, cam.hex_radius);
+                        let tm = lookup_hex_tile(i32(hm.x), i32(hm.y));
+                        var hit_m = false;
+                        var sy_m = 0.0;
+                        if (tm.elevation_tier >= -1) {
+                            sy_m = hex_surface_y(tm);
+                            hit_m = (pm.y <= sy_m);
+                        }
+                        if (hit_m) {
+                            hi = mid;
+                            t_hit = mid;
+                            p = pm;
+                            hinfo = hm;
+                            tile = tm;
+                            surface_y = sy_m;
+                        } else {
+                            lo = mid;
+                        }
+                    }
+                    prev_pos = ro + rd * lo;
+                }
 
-            var surface_y = 0.0;
-            if (tile.elevation_tier == -1) {
-                surface_y = select(-0.24, -0.46, morph_id == 3u);
-            } else if (morph_id == 8u) {
-                surface_y = -0.05;
-            } else {
-                surface_y = f32(tile.elevation_tier) * 0.55;
-            }
+                let biome_id = (tile.packed_flags >> 8u) & 255u;
+                let morph_id = (tile.packed_flags >> 16u) & 255u;
 
-            if (p.y <= surface_y) {
                 out.hit = true;
-                out.t_world = t;
+                out.t_world = t_hit;
                 let is_cliff = (prev_pos.y < surface_y - 0.03);
                 var surf_n = vec3<f32>(0.0, 1.0, 0.0);
                 if (!is_cliff && (morph_id == 4u || morph_id == 5u || morph_id == 8u)) {
@@ -547,7 +584,8 @@ fn trace_hex_terrain(ro: vec3<f32>, rd: vec3<f32>, max_t: f32) -> VoxelHit {
                 return out;
             }
         }
-        prev_pos = p;
+        t_prev = t;
+        prev_pos = p_coarse;
         t += dt;
     }
     return out;
@@ -720,13 +758,17 @@ fn cs_main(
 
     // 1. Trace terrain + ONLY the tile-culled Sparse 64-Tree instances + 3D voxel shrapnel debris
     var best = trace_hex_terrain(ro, rd, 250.0);
+    var hit_kind = 0u; // 0 = terrain, 1 = unit/prop, 2 = vfx debris
+    var hit_team = 0u;
     let culled_n = min(atomicLoad(&wg_tile_count), 128u);
     for (var k = 0u; k < culled_n; k = k + 1u) {
         let i = wg_tile_insts[k];
         let uhit = trace_unit_instance(i, ro, rd, best.t_world);
         if (uhit.hit && uhit.t_world < best.t_world) {
             best = uhit;
+            hit_kind = 1u;
             let tid = instances[i].team_id;
+            hit_team = tid;
             if (tid == 1u) {
                 best.albedo = mix(best.albedo, vec3<f32>(0.08, 0.72, 0.88), 0.08);
             } else if (tid == 2u) {
@@ -737,6 +779,8 @@ fn cs_main(
     let dhit = trace_vfx_debris(ro, rd, best.t_world);
     if (dhit.hit && dhit.t_world < best.t_world) {
         best = dhit;
+        hit_kind = 2u;
+        hit_team = 0u;
     }
 
     // 2. Dynamic Atmosphere Presets (0=ClearDay, 1=DuskTactical, 2=OrbitalFalloutStorm, 3=NightBioGlow)
@@ -791,10 +835,24 @@ fn cs_main(
         }
 
         let sky_hemi = 0.26 + 0.18 * (best.normal.y * 0.5 + 0.5);
+        let ndotv = clamp(dot(best.normal, -rd), 0.0, 1.0);
+        let fresnel_schlick = 0.04 + 0.96 * pow(1.0 - ndotv, 5.0);
+        let rim = pow(1.0 - ndotv, 3.5);
         let half_v = normalize(sun_dir - rd);
-        let spec = pow(max(dot(best.normal, half_v), 0.0), 42.0) * shadow * 0.24;
+        let spec = pow(max(dot(best.normal, half_v), 0.0), 42.0) * shadow * (0.20 + 0.45 * fresnel_schlick);
+        var rim_col = mix(sky_low, sky_high, 0.72) * (fresnel_schlick * 0.16);
+        if (hit_kind == 1u) {
+            var unit_rim_tint = mix(sky_low, sky_high, 0.78);
+            if (hit_team == 1u) {
+                unit_rim_tint = mix(unit_rim_tint, vec3<f32>(0.24, 0.86, 0.98), 0.48);
+            } else if (hit_team == 2u) {
+                unit_rim_tint = mix(unit_rim_tint, vec3<f32>(0.98, 0.38, 0.26), 0.48);
+            }
+            rim_col = unit_rim_tint * (rim * (0.22 + 0.16 * shadow));
+        }
         linear_rgb = best.albedo * (vec3<f32>(sky_hemi) + sun_tint * (ndotl * shadow))
             + sun_tint * spec
+            + rim_col
             + best.albedo * (best.emissive * emit_boost);
 
         let fog = clamp((best.t_world - 35.0) / 95.0, 0.0, 0.65);

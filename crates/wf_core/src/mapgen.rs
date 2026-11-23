@@ -191,15 +191,16 @@ pub fn default_base_anchors(radius: u8, mode: SymmetryMode) -> (Hex, Hex) {
 
 /// Generates a complete deterministic `BattleHexMap` with guaranteed base-to-base playability.
 pub fn generate_procedural_map(cfg: &MapGenConfig) -> BattleHexMap {
-    let r_i32 = i32::from(cfg.radius.clamp(4, 9));
-    let (p1_base, p2_base) = default_base_anchors(cfg.radius, cfg.symmetry);
+    let clamped_radius = cfg.radius.clamp(4, 9);
+    let r_i32 = i32::from(clamped_radius);
+    let (p1_base, p2_base) = default_base_anchors(clamped_radius, cfg.symmetry);
     let mut tiles: HashMap<Hex, HexTile> = HashMap::new();
 
     // Stage 1 & 2: Sample symmetrized multi-octave elevation & hazard noise
     for r in -r_i32..=r_i32 {
         for q in -r_i32..=r_i32 {
             let h = Hex::new(q, r);
-            if h.unsigned_distance_to(Hex::ZERO) > u32::from(cfg.radius) {
+            if h.unsigned_distance_to(Hex::ZERO) > (r_i32 as u32) {
                 continue;
             }
             let sym_h = symmetric_partner(h, cfg.symmetry);
@@ -209,7 +210,7 @@ pub fn generate_procedural_map(cfg: &MapGenConfig) -> BattleHexMap {
             let haz_n = fbm_hex(canonical, cfg.seed.wrapping_add(0xA5A5_5A5A), 0.42);
             let cover_n = fbm_hex(canonical, cfg.seed.wrapping_add(0x33CC_CC33), 0.55);
 
-            let dist_center = h.unsigned_distance_to(Hex::ZERO) as f32 / (cfg.radius as f32);
+            let dist_center = h.unsigned_distance_to(Hex::ZERO) as f32 / (r_i32 as f32);
 
             let (mut morph, mut elev) = if cfg.biome == Biome::SunkenAtoll {
                 // Archipelago ring around lagoon + outer ocean
@@ -335,7 +336,7 @@ pub fn generate_procedural_map(cfg: &MapGenConfig) -> BattleHexMap {
 
     // Stage 5: Compute directional cliff masks & guarantee terrestrial/shallow path connectivity
     let mut map = BattleHexMap {
-        radius: cfg.radius,
+        radius: clamped_radius,
         primary_biome: match cfg.biome {
             Biome::IrradiatedBadlands => BiomeSnapshot::Badlands,
             Biome::SavannahDustbowl => BiomeSnapshot::Savannah,

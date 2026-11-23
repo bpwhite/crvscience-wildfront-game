@@ -21,9 +21,9 @@
       {"scenario": "5. King of the Control Spire (Irradiated Badlands)", "tiles": 127, "cover_tiles": 19, "water_tiles": 15, "directed_cliff_edges": 0}
     ],
 "replay_runs": [
-      {"scenario": "5. King of the Control Spire (Irradiated Badlands)", "seed": 209934250803201, "winner_team": 1, "turns": 8, "recorded_steps": 60, "final_state_hash_hex": "0x502ecab43d99b1fd"},
-      {"scenario": "3. Bio-River Convoy (Overgrown Bio-Jungle)", "seed": 209934250803202, "winner_team": 1, "turns": 10, "recorded_steps": 78, "final_state_hash_hex": "0xe7c1ba8746e05a2d"},
-      {"scenario": "2. Bunker Breakout (Ruined Bunker Caldera)", "seed": 209934250803203, "winner_team": 1, "turns": 14, "recorded_steps": 99, "final_state_hash_hex": "0xd27c65a5437a354c"}
+      {"scenario": "5. King of the Control Spire (Irradiated Badlands)", "seed": 209934250803201, "winner_team": 1, "turns": 8, "recorded_steps": 60, "final_state_hash_hex": "0x8e68eb4b68ff3955"},
+      {"scenario": "3. Bio-River Convoy (Overgrown Bio-Jungle)", "seed": 209934250803202, "winner_team": 1, "turns": 10, "recorded_steps": 78, "final_state_hash_hex": "0x2f5a2d53af14d3ff"},
+      {"scenario": "2. Bunker Breakout (Ruined Bunker Caldera)", "seed": 209934250803203, "winner_team": 1, "turns": 14, "recorded_steps": 99, "final_state_hash_hex": "0x4dd419d75ded337b"}
     ]
 },
   "t2_deck_audit_and_round_robin": {
@@ -37,29 +37,29 @@
 "mean_weighted_utility_points": 17.80,
 "tournament_ai_difficulty": "Veteran (1-Ply EV Focus)",
 "total_matches": 102,
-"decisive_matches": 82,
-"p1_wins": 49,
-"p2_wins": 33,
+"decisive_matches": 83,
+"p1_wins": 55,
+"p2_wins": 28,
 "median_turns": 14.00,
-"tournament_wall_ms": 101353.95,
-"csv_bytes": 10419,
+"tournament_wall_ms": 35215.05,
+"csv_bytes": 10429,
 "combat_class_counts": { "Artifact": 7, "Commander": 6, "ControlNode": 1, "Heavy": 27, "Installation": 6, "Light": 22, "Medic": 9, "Medium": 29, "SupplyDepot": 1, "Support": 9, "SupportInstallation": 5, "TacticalDeployment": 19, "Trap": 11 },
 "standings": [
-      {"name": "Africa", "category": "Continent", "games": 10, "wins": 6, "win_rate_pct": 60.00, "avg_turns": 27.20},
-      {"name": "Australia", "category": "Continent", "games": 10, "wins": 6, "win_rate_pct": 60.00, "avg_turns": 15.20},
-      {"name": "Europe", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 21.70},
-      {"name": "NorthAmerica", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 27.40},
-      {"name": "SouthAmerica", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 17.30},
-      {"name": "Asia", "category": "Continent", "games": 10, "wins": 3, "win_rate_pct": 30.00, "avg_turns": 21.20},
-      {"name": "Pure Insect", "category": "Pure Bio-Type", "games": 16, "wins": 11, "win_rate_pct": 68.75, "avg_turns": 18.81},
-      {"name": "Pure Mammal", "category": "Pure Bio-Type", "games": 16, "wins": 9, "win_rate_pct": 56.25, "avg_turns": 22.69},
-      {"name": "Pure Cnidarian", "category": "Pure Bio-Type", "games": 16, "wins": 7, "win_rate_pct": 43.75, "avg_turns": 20.75},
-      {"name": "Pure Plant", "category": "Pure Bio-Type", "games": 16, "wins": 7, "win_rate_pct": 43.75, "avg_turns": 18.69},
-      {"name": "Pure Bird", "category": "Pure Bio-Type", "games": 16, "wins": 6, "win_rate_pct": 37.50, "avg_turns": 22.94},
-      {"name": "Pure Fish", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 25.69},
-      {"name": "Pure Amphibian", "category": "Pure Bio-Type", "games": 16, "wins": 3, "win_rate_pct": 18.75, "avg_turns": 25.88},
-      {"name": "Pure Reptile", "category": "Pure Bio-Type", "games": 16, "wins": 3, "win_rate_pct": 18.75, "avg_turns": 28.44},
-      {"name": "Pure Arachnid", "category": "Pure Bio-Type", "games": 16, "wins": 2, "win_rate_pct": 12.50, "avg_turns": 20.75}
+      {"name": "Australia", "category": "Continent", "games": 10, "wins": 7, "win_rate_pct": 70.00, "avg_turns": 15.30},
+      {"name": "Africa", "category": "Continent", "games": 10, "wins": 6, "win_rate_pct": 60.00, "avg_turns": 26.30},
+      {"name": "Europe", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 23.40},
+      {"name": "NorthAmerica", "category": "Continent", "games": 10, "wins": 5, "win_rate_pct": 50.00, "avg_turns": 26.70},
+      {"name": "SouthAmerica", "category": "Continent", "games": 10, "wins": 4, "win_rate_pct": 40.00, "avg_turns": 16.90},
+      {"name": "Asia", "category": "Continent", "games": 10, "wins": 3, "win_rate_pct": 30.00, "avg_turns": 21.60},
+      {"name": "Pure Plant", "category": "Pure Bio-Type", "games": 16, "wins": 10, "win_rate_pct": 62.50, "avg_turns": 18.06},
+      {"name": "Pure Mammal", "category": "Pure Bio-Type", "games": 16, "wins": 9, "win_rate_pct": 56.25, "avg_turns": 21.38},
+      {"name": "Pure Insect", "category": "Pure Bio-Type", "games": 16, "wins": 8, "win_rate_pct": 50.00, "avg_turns": 22.12},
+      {"name": "Pure Cnidarian", "category": "Pure Bio-Type", "games": 16, "wins": 7, "win_rate_pct": 43.75, "avg_turns": 18.62},
+      {"name": "Pure Fish", "category": "Pure Bio-Type", "games": 16, "wins": 6, "win_rate_pct": 37.50, "avg_turns": 24.50},
+      {"name": "Pure Amphibian", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 23.62},
+      {"name": "Pure Arachnid", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 22.19},
+      {"name": "Pure Bird", "category": "Pure Bio-Type", "games": 16, "wins": 4, "win_rate_pct": 25.00, "avg_turns": 26.94},
+      {"name": "Pure Reptile", "category": "Pure Bio-Type", "games": 16, "wins": 1, "win_rate_pct": 6.25, "avg_turns": 26.94}
     ]
 },
   "t3_svo_64tree_raymarching": {
@@ -76,7 +76,7 @@
 "interior_voxel_hits": 542,
 "benchmark_rays": 24000,
 "benchmark_hits": 14691,
-"benchmark_elapsed_ms": 343.61,
-"cpu_debug_rays_per_sec": 69846.8
+"benchmark_elapsed_ms": 79.50,
+"cpu_debug_rays_per_sec": 301891.7
 }
 }

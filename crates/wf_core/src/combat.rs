@@ -46,6 +46,9 @@ pub fn required_ranged_hit_roll(defender: &BoardUnit, ctx: CombatContext) -> u8 
     if defender.rooted_turns > 0 {
         effective_evade = (effective_evade - 1).max(0);
     }
+    if defender.blinded_this_turn {
+        effective_evade = (effective_evade - 1).max(0);
+    }
     if ctx.defender_in_rough_cover {
         effective_evade += 1;
     }
@@ -94,6 +97,7 @@ pub fn resolve_attack(
         };
     }
 
+    let hit_d6 = hit_d6.clamp(1, 6);
     let hit_threshold = if ctx.is_melee {
         1
     } else {

@@ -89,8 +89,8 @@ use crate::audio::SfxCue;
 use crate::game_session::{ClientMatchState, DEFAULT_QUICKSAVE_PATH};
 use crate::world_overlays::draw_world_space_overlays;
 use crate::picking::{pick_hex_from_ray, screen_cursor_to_world_ray};
-use crate::scene::{build_live_gpu_scene, HEX_WORLD_RADIUS};
-use crate::ui_hud::draw_tactical_hud;
+use crate::scene::{axial_to_world_xz, build_live_gpu_scene, HEX_WORLD_RADIUS};
+use crate::ui_hud::{draw_end_turn_confirm_modal, draw_tactical_hud};
 use crate::vfx::VfxManager;
 use crate::voxel_pipeline::{CameraUniforms, VoxelRenderEngine};
 
@@ -129,6 +129,19 @@ impl Default for OrbitalCamera {
 }
 
 impl OrbitalCamera {
+    fn clamp_target_to_bounds(&mut self, bounds: (f32, f32, f32, f32)) {
+        self.target.x = self.target.x.clamp(bounds.0, bounds.1);
+        self.target.z = self.target.z.clamp(bounds.2, bounds.3);
+    }
+
+    fn reset_view(&mut self) {
+        let def = Self::default();
+        self.target = def.target;
+        self.distance = def.distance;
+        self.yaw = def.yaw;
+        self.pitch = def.pitch;
+    }
+
     fn view_matrix(&self) -> Mat4 {
         let cp = self.pitch.cos();
         let eye = self.target
@@ -217,6 +230,113 @@ struct WildfrontApp {
     engine: Option<VoxelRenderEngine>,
     last_frame_instant: Instant,
     show_about: bool,
+    end_turn_confirm_open: bool,
+}
+
+fn board_pan_bounds(map: &wf_core::BattleHexMap) -> (f32, f32, f32, f32) {
+    if map.tiles.is_empty() {
+        let r = f32::from(map.radius.clamp(4, 9)) * HEX_WORLD_RADIUS * 1.8;
+        return (-r, r, -r, r);
+    }
+    let (mut min_x, mut max_x, mut min_z, mut max_z) =
+        (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+    for &h in map.tiles.keys() {
+        let (wx, wz) = axial_to_world_xz(h);
+        min_x = min_x.min(wx);
+        max_x = max_x.max(wx);
+        min_z = min_z.min(wz);
+        max_z = max_z.max(wz);
+    }
+    let pad = HEX_WORLD_RADIUS * 1.25;
+    (min_x - pad, max_x + pad, min_z - pad, max_z + pad)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ModalUiSnapshot {
+    main_menu_open: bool,
+    deck_builder_open: bool,
+    codex_open: bool,
+    stl_studio_open: bool,
+    dice_roller_open: bool,
+    db_manager_open: bool,
+    map_editor_open: bool,
+    replay_theater_open: bool,
+    about_open: bool,
+    end_turn_confirm_open: bool,
+    outcome_modal_open: bool,
+    hotseat_handoff_open: bool,
+}
+
+impl ModalUiSnapshot {
+    fn any_blocking_gameplay_hotkey(self) -> bool {
+        self.main_menu_open
+            || self.deck_builder_open
+            || self.codex_open
+            || self.stl_studio_open
+            || self.dice_roller_open
+            || self.db_manager_open
+            || self.map_editor_open
+            || self.replay_theater_open
+            || self.about_open
+            || self.end_turn_confirm_open
+            || self.outcome_modal_open
+            || self.hotseat_handoff_open
+    }
+
+    fn any_blocking_camera_hotkey(self) -> bool {
+        self.main_menu_open
+            || self.deck_builder_open
+            || self.codex_open
+            || self.stl_studio_open
+            || self.dice_roller_open
+            || self.db_manager_open
+            || self.replay_theater_open
+            || self.about_open
+            || self.end_turn_confirm_open
+            || self.outcome_modal_open
+            || self.hotseat_handoff_open
+    }
+
+    fn any_blocking_submodal_toggle(self) -> bool {
+        self.about_open
+            || self.end_turn_confirm_open
+            || self.outcome_modal_open
+            || self.hotseat_handoff_open
+    }
+
+    fn can_space_trigger_dice_roll(self) -> bool {
+        self.dice_roller_open
+            && !self.main_menu_open
+            && !self.deck_builder_open
+            && !self.codex_open
+            && !self.stl_studio_open
+            && !self.db_manager_open
+            && !self.map_editor_open
+            && !self.replay_theater_open
+            && !self.about_open
+            && !self.end_turn_confirm_open
+            && !self.outcome_modal_open
+            && !self.hotseat_handoff_open
+    }
+
+    fn can_space_reveal_handoff(self) -> bool {
+        self.hotseat_handoff_open
+            && !self.main_menu_open
+            && !self.deck_builder_open
+            && !self.codex_open
+            && !self.stl_studio_open
+            && !self.dice_roller_open
+            && !self.db_manager_open
+            && !self.map_editor_open
+            && !self.replay_theater_open
+            && !self.about_open
+            && !self.end_turn_confirm_open
+            && !self.outcome_modal_open
+    }
+
+    fn can_space_request_end_turn(self) -> bool {
+        !self.any_blocking_gameplay_hotkey()
+    }
 }
 
 fn load_window_icon() -> Option<winit::window::Icon> {
@@ -329,6 +449,54 @@ fn handle_escape_priority(
 }
 
 impl WildfrontApp {
+    fn modal_snapshot(&self) -> ModalUiSnapshot {
+        ModalUiSnapshot {
+            main_menu_open: self.main_menu.is_open,
+            deck_builder_open: self.deck_builder.is_open,
+            codex_open: self.codex.is_open,
+            stl_studio_open: self.stl_studio.is_open,
+            dice_roller_open: self.dice_roller.is_open,
+            db_manager_open: self.db_manager.is_open,
+            map_editor_open: self.map_editor.is_open,
+            replay_theater_open: self.replay_theater.is_open,
+            about_open: self.show_about,
+            end_turn_confirm_open: self.end_turn_confirm_open,
+            outcome_modal_open: self.session.match_outcome.is_some()
+                && !self.session.outcome_modal_dismissed,
+            hotseat_handoff_open: self.session.hotseat_mode
+                && self.session.hotseat_handoff_pending
+                && self.session.match_outcome.is_none(),
+        }
+    }
+
+    fn request_end_turn(&mut self) -> bool {
+        if self.session.match_outcome.is_some() {
+            return false;
+        }
+        if self.session.hotseat_handoff_pending {
+            self.session.end_active_turn(&mut self.vfx, &mut self.audio);
+            return true;
+        }
+        if !self.session.can_local_player_act() {
+            return false;
+        }
+        let viewer = self.session.viewing_team();
+        let act_rem = self
+            .session
+            .economy
+            .actions_remaining
+            .get(&viewer)
+            .copied()
+            .unwrap_or(0);
+        if act_rem > 0 {
+            self.end_turn_confirm_open = true;
+            false
+        } else {
+            self.session.end_active_turn(&mut self.vfx, &mut self.audio);
+            true
+        }
+    }
+
     fn update_hover_ray(&mut self) {
         let Some(eng) = self.engine.as_ref() else {
             return;
@@ -454,14 +622,8 @@ impl ApplicationHandler for WildfrontApp {
                                                 eng.upload_live_scene_and_vfx(&ht, &inst, &beams, beam_cnt, &debris, debris_cnt);
                                             }
                                         }
-                                    } else if !self.deck_builder.is_open
-                                        && !self.main_menu.is_open
-                                        && !self.codex.is_open
-                                        && !self.stl_studio.is_open
-                                        && !self.replay_theater.is_open
-                                        && !self.show_about
-                                        && !self.db_manager.is_open
-                                        && !self.dice_roller.is_open
+                                    } else if !self.modal_snapshot().any_blocking_camera_hotkey()
+                                        && !self.map_editor.is_open
                                     {
                                         self.session.handle_hex_click(clicked_hex, &mut self.vfx, &mut self.audio);
                                     }
@@ -504,49 +666,109 @@ impl ApplicationHandler for WildfrontApp {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                let modals = self.modal_snapshot();
                 let forward = Vec3::new(-self.camera.yaw.sin(), 0.0, -self.camera.yaw.cos());
                 let right = Vec3::new(self.camera.yaw.cos(), 0.0, -self.camera.yaw.sin());
                 let pan_step = 1.25;
+                let mut camera_changed = false;
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::Escape) => {
-                        handle_escape_priority(
-                            &mut self.show_about,
-                            &mut self.replay_theater.is_open,
-                            &mut self.map_editor.is_open,
-                            &mut self.db_manager.is_open,
-                            &mut self.dice_roller.is_open,
-                            &mut self.stl_studio.is_open,
-                            &mut self.codex.is_open,
-                            &mut self.deck_builder.is_open,
-                            &mut self.session.mode,
-                            self.main_menu.has_started_match,
-                            &mut self.main_menu.is_open,
-                        );
+                        if self.end_turn_confirm_open {
+                            self.end_turn_confirm_open = false;
+                        } else {
+                            handle_escape_priority(
+                                &mut self.show_about,
+                                &mut self.replay_theater.is_open,
+                                &mut self.map_editor.is_open,
+                                &mut self.db_manager.is_open,
+                                &mut self.dice_roller.is_open,
+                                &mut self.stl_studio.is_open,
+                                &mut self.codex.is_open,
+                                &mut self.deck_builder.is_open,
+                                &mut self.session.mode,
+                                self.main_menu.has_started_match,
+                                &mut self.main_menu.is_open,
+                            );
+                        }
+                    }
+                    PhysicalKey::Code(KeyCode::Enter) | PhysicalKey::Code(KeyCode::NumpadEnter) => {
+                        if self.end_turn_confirm_open
+                            && !self.main_menu.is_open
+                            && !self.show_about
+                            && !self.deck_builder.is_open
+                            && !self.codex.is_open
+                            && !self.db_manager.is_open
+                            && !self.stl_studio.is_open
+                            && !self.dice_roller.is_open
+                            && !self.map_editor.is_open
+                            && !self.replay_theater.is_open
+                        {
+                            self.end_turn_confirm_open = false;
+                            self.session.end_active_turn(&mut self.vfx, &mut self.audio);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::F1) => {
-                        self.codex.is_open = !self.codex.is_open;
+                        let other_open = modals.any_blocking_submodal_toggle()
+                            || self.deck_builder.is_open
+                            || self.db_manager.is_open
+                            || self.stl_studio.is_open
+                            || self.dice_roller.is_open
+                            || self.map_editor.is_open
+                            || self.replay_theater.is_open;
+                        if self.codex.is_open || !other_open {
+                            self.codex.is_open = !self.codex.is_open;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::F3) => {
-                        self.map_editor.is_open = !self.map_editor.is_open;
+                        let other_open = modals.any_blocking_submodal_toggle()
+                            || self.deck_builder.is_open
+                            || self.codex.is_open
+                            || self.db_manager.is_open
+                            || self.stl_studio.is_open
+                            || self.dice_roller.is_open
+                            || self.replay_theater.is_open;
+                        if self.map_editor.is_open || !other_open {
+                            self.map_editor.is_open = !self.map_editor.is_open;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::F4) => {
-                        self.replay_theater.is_open = !self.replay_theater.is_open;
-                        if self.replay_theater.is_open {
-                            self.replay_theater.sync_to_latest(&self.session);
+                        let other_open = modals.any_blocking_submodal_toggle()
+                            || self.deck_builder.is_open
+                            || self.codex.is_open
+                            || self.db_manager.is_open
+                            || self.stl_studio.is_open
+                            || self.dice_roller.is_open
+                            || self.map_editor.is_open;
+                        if self.replay_theater.is_open || !other_open {
+                            self.replay_theater.is_open = !self.replay_theater.is_open;
+                            if self.replay_theater.is_open {
+                                self.replay_theater.sync_to_latest(&self.session);
+                            }
                         }
                     }
                     PhysicalKey::Code(KeyCode::KeyL) => {
-                        self.camera.atmosphere_mode = (self.camera.atmosphere_mode + 1) % 4;
-                        let sky_lbl = match self.camera.atmosphere_mode {
-                            0 => "🌤 Sky: Clear Daylight (Auto Storm R30+)",
-                            1 => "🌅 Sky: Dusk Tactical",
-                            2 => "☄ Sky: Orbital Fallout Storm",
-                            _ => "🌙 Sky: Night Bio-Luminescence",
-                        };
-                        self.session.push_toast(sky_lbl);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.camera.atmosphere_mode = (self.camera.atmosphere_mode + 1) % 4;
+                            let sky_lbl = match self.camera.atmosphere_mode {
+                                0 => "🌤 Sky: Clear Daylight (Auto Storm R30+)",
+                                1 => "🌅 Sky: Dusk Tactical",
+                                2 => "☄ Sky: Orbital Fallout Storm",
+                                _ => "🌙 Sky: Night Bio-Luminescence",
+                            };
+                            self.session.push_toast(sky_lbl);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::F2) => {
-                        if !self.db_manager.is_open {
+                        let other_open = modals.any_blocking_submodal_toggle()
+                            || self.deck_builder.is_open
+                            || self.codex.is_open
+                            || self.stl_studio.is_open
+                            || self.dice_roller.is_open
+                            || self.map_editor.is_open
+                            || self.replay_theater.is_open;
+                        if self.db_manager.is_open {
+                            self.db_manager.is_open = false;
+                        } else if !other_open {
                             if let Some(sel_h) = self.session.selected_hex {
                                 if let Some(idx) = self.session.entity_at(sel_h) {
                                     let ck = self.session.entities[idx].card.card_key.clone();
@@ -557,19 +779,33 @@ impl ApplicationHandler for WildfrontApp {
                             } else {
                                 self.db_manager.is_open = true;
                             }
-                        } else {
-                            self.db_manager.is_open = false;
                         }
                     }
                     PhysicalKey::Code(KeyCode::KeyR) => {
-                        if !self.dice_roller.is_open {
-                            self.dice_roller.open_with_selection(&self.session);
-                        } else {
+                        let other_open = modals.any_blocking_submodal_toggle()
+                            || self.deck_builder.is_open
+                            || self.codex.is_open
+                            || self.db_manager.is_open
+                            || self.stl_studio.is_open
+                            || self.map_editor.is_open
+                            || self.replay_theater.is_open;
+                        if self.dice_roller.is_open {
                             self.dice_roller.is_open = false;
+                        } else if !other_open {
+                            self.dice_roller.open_with_selection(&self.session);
                         }
                     }
                     PhysicalKey::Code(KeyCode::F8) => {
-                        if !self.stl_studio.is_open {
+                        let other_open = modals.any_blocking_submodal_toggle()
+                            || self.deck_builder.is_open
+                            || self.codex.is_open
+                            || self.db_manager.is_open
+                            || self.dice_roller.is_open
+                            || self.map_editor.is_open
+                            || self.replay_theater.is_open;
+                        if self.stl_studio.is_open {
+                            self.stl_studio.is_open = false;
+                        } else if !other_open {
                             if let Some(sel_h) = self.session.selected_hex {
                                 if let Some(idx) = self.session.entity_at(sel_h) {
                                     let ck = self.session.entities[idx].card.card_key.clone();
@@ -580,96 +816,160 @@ impl ApplicationHandler for WildfrontApp {
                             } else {
                                 self.stl_studio.is_open = true;
                             }
-                        } else {
-                            self.stl_studio.is_open = false;
                         }
                     }
                     PhysicalKey::Code(KeyCode::KeyB) => {
-                        self.deck_builder.is_open = !self.deck_builder.is_open;
+                        let other_open = modals.any_blocking_submodal_toggle()
+                            || self.codex.is_open
+                            || self.db_manager.is_open
+                            || self.stl_studio.is_open
+                            || self.dice_roller.is_open
+                            || self.map_editor.is_open
+                            || self.replay_theater.is_open;
+                        if self.deck_builder.is_open || !other_open {
+                            self.deck_builder.is_open = !self.deck_builder.is_open;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::Tab) => {
-                        self.camera.show_overlays = !self.camera.show_overlays;
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.camera.show_overlays = !self.camera.show_overlays;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::KeyH) => {
-                        self.camera.show_unit_badges = !self.camera.show_unit_badges;
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.camera.show_unit_badges = !self.camera.show_unit_badges;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::KeyP) => {
-                        self.camera.show_terrain_props = !self.camera.show_terrain_props;
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.camera.show_terrain_props = !self.camera.show_terrain_props;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::KeyF) => {
-                        self.session.fog_enabled = !self.session.fog_enabled;
-                        if !self.session.fog_enabled {
-                            self.session.hotseat_handoff_pending = false;
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.session.fog_enabled = !self.session.fog_enabled;
+                            if !self.session.fog_enabled {
+                                self.session.hotseat_handoff_pending = false;
+                            }
                         }
                     }
                     PhysicalKey::Code(KeyCode::KeyM) => {
-                        self.session.hotseat_mode = !self.session.hotseat_mode;
-                        self.session.hotseat_handoff_pending = false;
-                        self.session.mode = crate::game_session::CommandMode::Inspect;
-                        let mode_lbl = if self.session.hotseat_mode {
-                            "👥 Switched to 1v1 Local Hotseat Mode!"
-                        } else {
-                            "🤖 Switched to Solo vs AI Mode!"
-                        };
-                        self.session.push_toast(mode_lbl);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.session.hotseat_mode = !self.session.hotseat_mode;
+                            self.session.hotseat_handoff_pending = false;
+                            self.session.mode = crate::game_session::CommandMode::Inspect;
+                            let mode_lbl = if self.session.hotseat_mode {
+                                "👥 Switched to 1v1 Local Hotseat Mode!"
+                            } else {
+                                "🤖 Switched to Solo vs AI Mode!"
+                            };
+                            self.session.push_toast(mode_lbl);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::F5) => {
-                        let save_p = crate::paths::writable_app_path(DEFAULT_QUICKSAVE_PATH);
-                        match self.session.save_quicksave(&save_p, self.active_seed) {
-                            Ok(_) => self.audio.play_ui(SfxCue::BioHealChime),
-                            Err(err) => self.session.push_toast(format!("⚠ Save failed: {err}")),
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            let save_p = crate::paths::writable_app_path(DEFAULT_QUICKSAVE_PATH);
+                            match self.session.save_quicksave(&save_p, self.active_seed) {
+                                Ok(_) => self.audio.play_ui(SfxCue::BioHealChime),
+                                Err(err) => self.session.push_toast(format!("⚠ Save failed: {err}")),
+                            }
                         }
                     }
                     PhysicalKey::Code(KeyCode::F9) => {
-                        let load_p = crate::paths::writable_app_path(DEFAULT_QUICKSAVE_PATH);
-                        match self.session.load_quicksave(&load_p) {
-                            Ok(restored_seed) => {
-                                self.active_seed = restored_seed;
-                                self.audio.play_ui(SfxCue::UiCardTurn);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            let load_p = crate::paths::writable_app_path(DEFAULT_QUICKSAVE_PATH);
+                            match self.session.load_quicksave(&load_p) {
+                                Ok(restored_seed) => {
+                                    self.active_seed = restored_seed;
+                                    self.end_turn_confirm_open = false;
+                                    self.audio.play_ui(SfxCue::UiCardTurn);
+                                }
+                                Err(err) => self.session.push_toast(format!("⚠ {err}")),
                             }
-                            Err(err) => self.session.push_toast(format!("⚠ {err}")),
                         }
                     }
                     PhysicalKey::Code(KeyCode::KeyW) | PhysicalKey::Code(KeyCode::ArrowUp) => {
-                        self.camera.target += forward * pan_step;
+                        if !modals.any_blocking_camera_hotkey() {
+                            self.camera.target += forward * pan_step;
+                            camera_changed = true;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::KeyS) | PhysicalKey::Code(KeyCode::ArrowDown) => {
-                        self.camera.target -= forward * pan_step;
+                        if !modals.any_blocking_camera_hotkey() {
+                            self.camera.target -= forward * pan_step;
+                            camera_changed = true;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::KeyA) | PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                        self.camera.target -= right * pan_step;
+                        if !modals.any_blocking_camera_hotkey() {
+                            self.camera.target -= right * pan_step;
+                            camera_changed = true;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::KeyD) | PhysicalKey::Code(KeyCode::ArrowRight) => {
-                        self.camera.target += right * pan_step;
+                        if !modals.any_blocking_camera_hotkey() {
+                            self.camera.target += right * pan_step;
+                            camera_changed = true;
+                        }
+                    }
+                    PhysicalKey::Code(KeyCode::Home) | PhysicalKey::Code(KeyCode::KeyC) => {
+                        if !modals.any_blocking_camera_hotkey() {
+                            self.camera.reset_view();
+                            camera_changed = true;
+                            self.session.push_toast("🎯 Camera reset to tactical overview");
+                        }
                     }
                     PhysicalKey::Code(KeyCode::Digit1) => {
-                        self.session.load_scenario(ScenarioId::EmergenceSkirmish, self.active_seed);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.end_turn_confirm_open = false;
+                            self.session.load_scenario(ScenarioId::EmergenceSkirmish, self.active_seed);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::Digit2) => {
-                        self.session.load_scenario(ScenarioId::BunkerBreakout, self.active_seed);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.end_turn_confirm_open = false;
+                            self.session.load_scenario(ScenarioId::BunkerBreakout, self.active_seed);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::Digit3) => {
-                        self.session.load_scenario(ScenarioId::BioRiverConvoy, self.active_seed);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.end_turn_confirm_open = false;
+                            self.session.load_scenario(ScenarioId::BioRiverConvoy, self.active_seed);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::Digit4) => {
-                        self.session.load_scenario(ScenarioId::PelagicAtollAssault, self.active_seed);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.end_turn_confirm_open = false;
+                            self.session.load_scenario(ScenarioId::PelagicAtollAssault, self.active_seed);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::Digit5) => {
-                        self.session.load_scenario(ScenarioId::KingOfTheControlSpire, self.active_seed);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.end_turn_confirm_open = false;
+                            self.session.load_scenario(ScenarioId::KingOfTheControlSpire, self.active_seed);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::KeyN) => {
-                        self.active_seed = self.active_seed.wrapping_add(0x9E37_79B9);
-                        let sid = self.session.scenario.scenario_id;
-                        self.session.load_scenario(sid, self.active_seed);
+                        if !modals.any_blocking_gameplay_hotkey() {
+                            self.end_turn_confirm_open = false;
+                            self.active_seed = self.active_seed.wrapping_add(0x9E37_79B9);
+                            let sid = self.session.scenario.scenario_id;
+                            self.session.load_scenario(sid, self.active_seed);
+                        }
                     }
                     PhysicalKey::Code(KeyCode::Space) => {
-                        if self.dice_roller.is_open {
+                        if modals.can_space_trigger_dice_roll() {
                             self.dice_roller.trigger_roll(&mut self.audio);
-                        } else {
-                            self.session.end_active_turn(&mut self.vfx, &mut self.audio);
+                        } else if modals.can_space_reveal_handoff() || modals.can_space_request_end_turn() {
+                            self.request_end_turn();
                         }
                     }
                     _ => {}
+                }
+                if camera_changed {
+                    let bounds = board_pan_bounds(&self.session.scenario.map);
+                    self.camera.clamp_target_to_bounds(bounds);
+                    self.update_hover_ray();
                 }
                 if let Some(eng) = self.engine.as_ref() {
                     if let Some(w) = eng.window.as_ref() { w.request_redraw(); }
@@ -768,6 +1068,7 @@ impl ApplicationHandler for WildfrontApp {
                 let mut hud_actions = Default::default();
                 let mut menu_actions = Default::default();
                 let mut launched_custom_deck: Option<(usize, DeckList)> = None;
+                let mut confirm_end_turn_now = false;
                 let mut paint_jobs = Vec::new();
                 let mut textures_delta = egui::TexturesDelta::default();
 
@@ -857,6 +1158,22 @@ impl ApplicationHandler for WildfrontApp {
                             launched_custom_deck = Some(new_deck);
                         }
                         draw_about_modal(root_ui, &mut self.show_about);
+                        if self.end_turn_confirm_open
+                            && (self.main_menu.is_open || !self.session.can_local_player_act())
+                        {
+                            self.end_turn_confirm_open = false;
+                        }
+                        let viewer = self.session.viewing_team();
+                        let act_rem = self
+                            .session
+                            .economy
+                            .actions_remaining
+                            .get(&viewer)
+                            .copied()
+                            .unwrap_or(0);
+                        if draw_end_turn_confirm_modal(root_ui, &mut self.end_turn_confirm_open, act_rem) {
+                            confirm_end_turn_now = true;
+                        }
                     });
                     let window = eng.window.as_ref().expect("windowed mode");
                     egui_state.handle_platform_output(window, full_output.platform_output);
@@ -1051,8 +1368,11 @@ impl ApplicationHandler for WildfrontApp {
                     self.session.switch_deck_preset(preset);
                     scene_mutated = true;
                 }
-                if hud_actions.end_turn {
+                if confirm_end_turn_now {
+                    self.end_turn_confirm_open = false;
                     self.session.end_active_turn(&mut self.vfx, &mut self.audio);
+                    scene_mutated = true;
+                } else if hud_actions.end_turn && self.request_end_turn() {
                     scene_mutated = true;
                 }
 
@@ -1717,6 +2037,7 @@ fn main() {
         engine: None,
         last_frame_instant: Instant::now(),
         show_about: false,
+        end_turn_confirm_open: false,
     };
     crate::paths::install_ui_fonts(&app.egui_ctx);
     if let CliAction::Screenshot { out_path, view } = cli_action {
@@ -1849,5 +2170,72 @@ mod tests {
             &mut main_menu_open,
         );
         assert!(!main_menu_open);
+    }
+
+    #[test]
+    fn gameplay_hotkeys_and_space_are_blocked_by_any_open_modal_or_curtain() {
+        let base = ModalUiSnapshot::default();
+        assert!(!base.any_blocking_gameplay_hotkey());
+        assert!(base.can_space_request_end_turn());
+
+        let modal_cases = [
+            ModalUiSnapshot { main_menu_open: true, ..base },
+            ModalUiSnapshot { deck_builder_open: true, ..base },
+            ModalUiSnapshot { codex_open: true, ..base },
+            ModalUiSnapshot { stl_studio_open: true, ..base },
+            ModalUiSnapshot { dice_roller_open: true, ..base },
+            ModalUiSnapshot { db_manager_open: true, ..base },
+            ModalUiSnapshot { map_editor_open: true, ..base },
+            ModalUiSnapshot { replay_theater_open: true, ..base },
+            ModalUiSnapshot { about_open: true, ..base },
+            ModalUiSnapshot { end_turn_confirm_open: true, ..base },
+            ModalUiSnapshot { outcome_modal_open: true, ..base },
+            ModalUiSnapshot { hotseat_handoff_open: true, ..base },
+        ];
+        for snap in modal_cases {
+            assert!(
+                snap.any_blocking_gameplay_hotkey(),
+                "1-5 / N / gameplay hotkeys must be blocked when modal is open: {snap:?}"
+            );
+            assert!(
+                !snap.can_space_request_end_turn(),
+                "Space must never end turn when modal is open: {snap:?}"
+            );
+        }
+
+        // Handoff curtain allows Space reveal ONLY when no other modal is stacked above it
+        let handoff_only = ModalUiSnapshot { hotseat_handoff_open: true, ..base };
+        assert!(handoff_only.can_space_reveal_handoff());
+        assert!(handoff_only.any_blocking_gameplay_hotkey());
+        let handoff_under_codex = ModalUiSnapshot {
+            hotseat_handoff_open: true,
+            codex_open: true,
+            ..base
+        };
+        assert!(!handoff_under_codex.can_space_reveal_handoff());
+    }
+
+    #[test]
+    fn camera_pan_clamps_to_board_bounds_and_reset_view_restores_defaults() {
+        let scen = wf_core::generate_scenario(ScenarioId::EmergenceSkirmish, 0x2072_0814);
+        let bounds = board_pan_bounds(&scen.map);
+        let mut cam = OrbitalCamera::default();
+        cam.target = Vec3::new(9_999.0, 1.6, -9_999.0);
+        cam.distance = 62.0;
+        cam.yaw = 2.1;
+        cam.pitch = 1.2;
+
+        cam.clamp_target_to_bounds(bounds);
+        assert!((cam.target.x - bounds.1).abs() < 1e-4);
+        assert!((cam.target.z - bounds.2).abs() < 1e-4);
+        assert!(bounds.0 < 0.0 && bounds.1 > 0.0);
+        assert!(bounds.2 < 0.0 && bounds.3 > 0.0);
+
+        cam.reset_view();
+        let def = OrbitalCamera::default();
+        assert_eq!(cam.target, def.target);
+        assert_eq!(cam.distance, def.distance);
+        assert_eq!(cam.yaw, def.yaw);
+        assert_eq!(cam.pitch, def.pitch);
     }
 }

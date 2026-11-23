@@ -1609,10 +1609,7 @@ impl ClientMatchState {
                     for ent in self.entities.iter_mut() {
                         if ent.team_id == enemy_team && ent.unit.current_str_hp > 0 && ent.hex.unsigned_distance_to(pivot_hex) <= 1 {
                             ent.unit.target_locked = true;
-                            if ent.unit.evade > 0 && !ent.unit.blinded_this_turn {
-                                ent.unit.evade -= 1;
-                                ent.unit.blinded_this_turn = true;
-                            }
+                            ent.unit.blinded_this_turn = true;
                             hit_cnt += 1;
                         }
                     }

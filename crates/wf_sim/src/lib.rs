@@ -21,7 +21,9 @@ pub mod ai_planner;
 pub mod sim_engine;
 pub mod tournament;
 
-pub use ai_planner::{evaluate_board, select_best_action, AiDifficulty};
+pub use ai_planner::{
+    compute_attack_ev, evaluate_board, select_best_action, AiDifficulty, AttackEvSummary,
+};
 pub use sim_engine::{
     HeadlessMatch, MatchReplayFile, RecordedActionStep, SimAction, SimEntity, TurnTelemetryPoint,
 };

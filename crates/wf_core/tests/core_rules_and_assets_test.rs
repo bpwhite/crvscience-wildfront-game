@@ -25,8 +25,9 @@ use wf_core::logistics::{
     begin_player_turn, compute_home_supply_coverage, is_within_control_node, BoardUnit, HexPos,
     PlayerEconomy, PlayerOwner,
 };
+use wf_core::mapgen::{default_base_anchors, generate_procedural_map, has_traversal_path, MapGenConfig, SymmetryMode};
 use wf_core::{
-    compile_multi_asset_64tree, generate_scenario, BakedVoxelAsset, CombatClass, DeckEntry,
+    compile_multi_asset_64tree, generate_scenario, BakedVoxelAsset, Biome, CombatClass, DeckEntry,
     DeckList, GraveyardFacility, OrganismFaction, RosterManifest, ScenarioId,
 };
 
@@ -365,4 +366,88 @@ fn test_13_static_building_structural_armor_does_not_refresh_on_turn_start() {
     let mut pairs = vec![(PlayerOwner(1), &mut hq)];
     begin_player_turn(1, &mut econ, &mut pairs);
     assert_eq!(hq.current_armor, 0, "Static building structural armor must not auto-refresh!");
+}
+
+#[test]
+fn test_14_blind_status_preserves_zero_evade_and_clamps_hit_d6() {
+    let mut econ = PlayerEconomy::default();
+    let mut zero_evade = sample_board_unit("Fortress", CombatClass::Heavy, 6, 2, 0, 2, false, 0, 0);
+    let mut high_evade = sample_board_unit("Falcon", CombatClass::Light, 4, 0, 2, 2, false, 0, 0);
+    zero_evade.blinded_this_turn = true;
+    high_evade.blinded_this_turn = true;
+
+    let ctx = CombatContext {
+        hex_distance: 2,
+        is_melee: false,
+        attacker_can_fly: false,
+        attacker_stealth_ambush: false,
+        attacker_adjacent_commander: false,
+        attacker_pack_tactics_bonus: false,
+        defender_in_rough_cover: false,
+    };
+
+    // Unblinded falcon would need 1 + 2 + 2 = 5+; blinded dynamically lowers effective evade to 1 -> 4+
+    assert_eq!(required_ranged_hit_roll(&high_evade, ctx), 4);
+    assert_eq!(high_evade.evade, 2, "Base evade must remain immutable while blinded");
+    // 0-evade unit stays floored at 0 effective evade -> 1 + 2 + 0 = 3+
+    assert_eq!(required_ranged_hit_roll(&zero_evade, ctx), 3);
+
+    // Out-of-bounds hit_d6 values clamp cleanly to 1..=6 (0 -> 1 auto-miss; 7 -> 6 auto-hit)
+    let mut att = sample_board_unit("Shooter", CombatClass::Medium, 5, 0, 0, 2, false, 0, 0);
+    let miss_zero = resolve_attack(&mut att, &mut zero_evade.clone(), ctx, 0, 4);
+    assert!(!miss_zero.hit_succeeded, "hit_d6=0 must clamp to 1 and auto-miss");
+    let hit_seven = resolve_attack(&mut att, &mut high_evade.clone(), ctx, 7, 4);
+    assert!(hit_seven.hit_succeeded, "hit_d6=7 must clamp to 6 and auto-hit");
+
+    // Round-trip through begin_player_turn must clear blinded_this_turn without inflating 0-evade to 1
+    let mut pairs = vec![
+        (PlayerOwner(1), &mut zero_evade),
+        (PlayerOwner(1), &mut high_evade),
+    ];
+    begin_player_turn(1, &mut econ, &mut pairs);
+    assert!(!zero_evade.blinded_this_turn);
+    assert!(!high_evade.blinded_this_turn);
+    assert_eq!(zero_evade.evade, 0, "0-evade unit must never inflate to 1 after blind expires");
+    assert_eq!(high_evade.evade, 2, "Base evade must stay 2 after blind expires");
+    assert_eq!(required_ranged_hit_roll(&high_evade, ctx), 5);
+}
+
+#[test]
+fn test_15_mapgen_zero_radius_clamps_to_radius_four_with_valid_tiles() {
+    for biome in [Biome::SunkenAtoll, Biome::IrradiatedBadlands, Biome::RuinedBunkerCaldera] {
+        let cfg_zero = MapGenConfig {
+            seed: 0x2072_0042,
+            radius: 0,
+            biome,
+            symmetry: SymmetryMode::Rotational180,
+            water_ratio: 0.50,
+            highland_ratio: 0.24,
+            mountain_ratio: 0.12,
+            hazard_ratio: 0.12,
+        };
+        let mut cfg_four = cfg_zero.clone();
+        cfg_four.radius = 4;
+
+        let map_zero = generate_procedural_map(&cfg_zero);
+        let map_four = generate_procedural_map(&cfg_four);
+
+        assert_eq!(map_zero.radius, 4, "radius: 0 must clamp cleanly to 4");
+        assert_eq!(map_zero.tiles.len(), 61, "Radius 4 hex disk must contain 61 tiles");
+        assert_eq!(
+            map_zero.tiles.len(),
+            map_four.tiles.len(),
+            "Clamped radius 0 map must match radius 4 tile count"
+        );
+        for (&h, t) in &map_zero.tiles {
+            assert!(h.unsigned_distance_to(Hex::ZERO) <= 4);
+            assert!(t.elevation <= 3);
+            let t4 = &map_four.tiles[&h];
+            assert_eq!(t.morphology, t4.morphology, "SunkenAtoll/biome NaN check at {h:?}");
+            assert_eq!(t.elevation, t4.elevation);
+        }
+        let (p1, p2) = default_base_anchors(map_zero.radius, cfg_zero.symmetry);
+        assert!(map_zero.tiles.contains_key(&p1));
+        assert!(map_zero.tiles.contains_key(&p2));
+        assert!(has_traversal_path(&map_zero, p1, p2, 0));
+    }
 }

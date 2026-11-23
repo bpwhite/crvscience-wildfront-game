@@ -669,3 +669,32 @@ impl VoxelRenderEngine {
         self.queue.submit(user_cmd_bufs);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn raymarch_64tree_wgsl_parses_and_validates_cleanly() {
+        let src = include_str!("shaders/raymarch_64tree.wgsl");
+        let module = wgpu::naga::front::wgsl::parse_str(src)
+            .expect("raymarch_64tree.wgsl failed WGSL parsing");
+        let _info = wgpu::naga::valid::Validator::new(
+            wgpu::naga::valid::ValidationFlags::all(),
+            wgpu::naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("raymarch_64tree.wgsl failed Naga shader validation");
+
+        let entry_names: Vec<&str> = module
+            .entry_points
+            .iter()
+            .map(|ep| ep.name.as_str())
+            .collect();
+        for expected in ["cs_main", "vs_blit", "fs_blit", "fs_blit_unorm"] {
+            assert!(
+                entry_names.contains(&expected),
+                "Missing expected WGSL entry point '{expected}'"
+            );
+        }
+        assert_eq!(module.entry_points.len(), 4);
+    }
+}

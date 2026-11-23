@@ -767,7 +767,7 @@ impl HeadlessMatch {
         ent.unit.carried_munitions >= cost
     }
 
-    fn spend_munition_for_unit(&mut self, ent_idx: usize, cost: u8) -> bool {
+    pub(crate) fn spend_munition_for_unit(&mut self, ent_idx: usize, cost: u8) -> bool {
         if cost == 0 {
             return true;
         }
@@ -1358,7 +1358,7 @@ impl HeadlessMatch {
         self.check_immediate_hq_victory();
     }
 
-    fn enqueue_destroyed_units(&mut self) {
+    pub(crate) fn enqueue_destroyed_units(&mut self) {
         for e in &mut self.entities {
             if e.unit.current_str_hp == 0
                 && !matches!(
@@ -1401,7 +1401,7 @@ impl HeadlessMatch {
         self.entities.retain(|e| e.unit.current_str_hp > 0);
     }
 
-    fn check_immediate_hq_victory(&mut self) {
+    pub(crate) fn check_immediate_hq_victory(&mut self) {
         let p1_hq_alive = self
             .entities
             .iter()

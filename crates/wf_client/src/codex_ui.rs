@@ -159,8 +159,8 @@ impl CodexOverlay {
                                 "Keyboard & Mouse Command Reference",
                                 "• Left Click: Select hex/unit, deploy selected hand card, move, attack, or cast ability
                                  • Right Drag / Left Drag: Orbit 3D camera  |  Scroll Wheel: Smooth voxel LOD zoom
-                                 • WASD / Arrows: Pan camera across battlefield
-                                 • Space: End Turn (or reveal Hotseat Turn-Handoff curtain)
+                                 • WASD / Arrows: Pan camera (clamped to battlefield bounds)  |  Home / C: Reset camera view
+                                 • Space: End Turn (prompts confirmation if Actions remain; or reveal Hotseat Turn-Handoff curtain)
                                  • B: Deck Builder  |  F2: Database  |  F3: 3D Hex Map Studio  |  F4: Replay & Telemetry  |  R: Dice  |  L: Sky Lighting  |  F1: Codex
                                  • Tab: Supply/Node hex auras  |  H: Floating 3D Unit HP bars  |  P: 3D Terrain Props  |  F: Fog-of-War
                                  • M: Toggle Solo vs AI <-> 1v1 Local Hotseat  |  F8: 3D Print Tabletop .STL Studio  |  F5 / F9: Quicksave / Quickload (.ron)

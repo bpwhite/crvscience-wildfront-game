@@ -114,7 +114,11 @@ impl DiceRollerStudio {
                 self.manual_att_str = att.unit.current_str_hp;
                 self.manual_def_str = def.unit.current_str_hp;
                 self.manual_def_arm = def.unit.current_armor;
-                self.manual_def_evd = def.unit.evade;
+                self.manual_def_evd = def
+                    .unit
+                    .evade
+                    .saturating_sub(u8::from(def.unit.rooted_turns > 0))
+                    .saturating_sub(u8::from(def.unit.blinded_this_turn));
                 let dist = sel.unsigned_distance_to(hov) as u8;
                 self.manual_dist = dist;
                 self.manual_is_melee = dist <= att.card.melee_range && (att.card.ranged_distance == 0 || dist == 1);
