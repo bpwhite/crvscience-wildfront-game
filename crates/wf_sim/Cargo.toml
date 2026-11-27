@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "Headless deterministic match simulator, 2-ply tactical AI planner, replay verifier, and 102-match tournament runner for Wildfront Battlegrounds."
+homepage.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "wf_sim"

@@ -12,6 +12,8 @@ version = "3.4.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 authors = ["Bryan P. White"]
+homepage = "https://crvscience.com/apps"
+repository = "https://github.com/bpwhite/crvscience-wildfront-game"
 
 [workspace.dependencies]
 # Core data & serialization

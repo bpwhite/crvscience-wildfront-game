@@ -3,6 +3,8 @@ name = "wf_assets"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "wf_assets"
