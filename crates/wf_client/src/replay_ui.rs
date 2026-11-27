@@ -345,6 +345,47 @@ impl ReplayTheaterStudio {
                         }
                     }
                 });
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.button("📊 Export Balance Scorecard (.JSON)").clicked() {
+                        let default_dir = crate::paths::writable_app_path("reports");
+                        if let Some(p) = rfd::FileDialog::new()
+                            .set_title("Export Faction & Lineage EHP Scorecard (.JSON)")
+                            .set_directory(&default_dir)
+                            .set_file_name("wildfront_balance_scorecard.json")
+                            .add_filter("JSON Scorecard", &["json"])
+                            .save_file()
+                        {
+                            let sc = wf_sim::build_balance_scorecard(&session.roster, None);
+                            match wf_sim::export_balance_scorecard_json(&p, &sc) {
+                                Ok(()) => {
+                                    self.status_line = format!("✓ Exported balance scorecard JSON to {}", p.display());
+                                    audio.play_ui(SfxCue::BioHealChime);
+                                }
+                                Err(e) => self.status_line = format!("⚠ Scorecard export failed: {e}"),
+                            }
+                        }
+                    }
+                    if ui.button("📊 Export Balance Scorecard (.CSV)").clicked() {
+                        let default_dir = crate::paths::writable_app_path("reports");
+                        if let Some(p) = rfd::FileDialog::new()
+                            .set_title("Export Faction & Lineage EHP Scorecard (.CSV)")
+                            .set_directory(&default_dir)
+                            .set_file_name("wildfront_balance_scorecard.csv")
+                            .add_filter("CSV Scorecard", &["csv"])
+                            .save_file()
+                        {
+                            let sc = wf_sim::build_balance_scorecard(&session.roster, None);
+                            match wf_sim::export_balance_scorecard_csv(&p, &sc) {
+                                Ok(()) => {
+                                    self.status_line = format!("✓ Exported balance scorecard CSV to {}", p.display());
+                                    audio.play_ui(SfxCue::BioHealChime);
+                                }
+                                Err(e) => self.status_line = format!("⚠ Scorecard export failed: {e}"),
+                            }
+                        }
+                    }
+                });
 
                 ui.add_space(4.0);
                 ui.label(RichText::new(&self.status_line).small().color(Color32::from_rgb(206, 224, 236)));

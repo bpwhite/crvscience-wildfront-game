@@ -23,7 +23,8 @@ use ron::ser::{to_string_pretty, PrettyConfig};
 use wf_core::{OrganismFaction, OriginAllegiance, RosterManifest, ScenarioId};
 use wf_sim::tournament::play_headless_match_to_end;
 use wf_sim::{
-    build_tournament_deck, run_102_round_robin, AiDifficulty, HeadlessMatch,
+    build_balance_scorecard, build_tournament_deck, export_balance_scorecard_csv,
+    export_balance_scorecard_json, run_102_round_robin, AiDifficulty, HeadlessMatch,
 };
 
 #[derive(Parser)]
@@ -66,6 +67,23 @@ enum Commands {
         max_rounds: u32,
         #[arg(long)]
         export_ron: Option<PathBuf>,
+        #[arg(long)]
+        export_scorecard_json: Option<PathBuf>,
+        #[arg(long)]
+        export_scorecard_csv: Option<PathBuf>,
+    },
+    /// Export faction & lineage EHP/win-rate balance analytics scorecard (JSON / CSV)
+    Scorecard {
+        #[arg(long, default_value = "veteran")]
+        ai: String,
+        #[arg(long, default_value_t = 45)]
+        max_rounds: u32,
+        #[arg(long, default_value_t = false)]
+        roster_only: bool,
+        #[arg(long)]
+        export_json: Option<PathBuf>,
+        #[arg(long)]
+        export_csv: Option<PathBuf>,
     },
     /// Deterministically re-simulate and verify every turn state hash of a saved `.ron` replay
     VerifyReplay {
@@ -150,6 +168,8 @@ fn main() -> Result<()> {
             ai,
             max_rounds,
             export_ron,
+            export_scorecard_json,
+            export_scorecard_csv,
         } => {
             let diff = parse_ai(&ai);
             let report = run_102_round_robin(&roster, diff, max_rounds);
@@ -178,6 +198,49 @@ fn main() -> Result<()> {
                 let raw = to_string_pretty(&report, PrettyConfig::new().depth_limit(4))?;
                 fs::write(&out_p, raw)?;
                 println!("[wf_sim] Exported tournament report to {}", out_p.display());
+            }
+            if export_scorecard_json.is_some() || export_scorecard_csv.is_some() {
+                let sc = build_balance_scorecard(&roster, Some(&report));
+                if let Some(ref jp) = export_scorecard_json {
+                    export_balance_scorecard_json(jp, &sc).map_err(|e| anyhow::anyhow!(e))?;
+                    println!("[wf_sim] Exported balance scorecard JSON to {}", jp.display());
+                }
+                if let Some(ref cp) = export_scorecard_csv {
+                    export_balance_scorecard_csv(cp, &sc).map_err(|e| anyhow::anyhow!(e))?;
+                    println!("[wf_sim] Exported balance scorecard CSV to {}", cp.display());
+                }
+            }
+        }
+        Commands::Scorecard {
+            ai,
+            max_rounds,
+            roster_only,
+            export_json,
+            export_csv,
+        } => {
+            let report = if roster_only {
+                None
+            } else {
+                Some(run_102_round_robin(&roster, parse_ai(&ai), max_rounds))
+            };
+            let sc = build_balance_scorecard(&roster, report.as_ref());
+            println!(
+                "=== WILDFRONT v3.4.1 FACTION & LINEAGE BALANCE SCORECARD ({} cards, {}) ===",
+                sc.total_cards, sc.ai_difficulty
+            );
+            for r in &sc.lineages {
+                println!(
+                    "  [Lineage {:<10}] cards={:>2} avg_pts={:>5.1} avg_EHP={:>5.1} ({:.2}/pt) W={:>2}/{} ({:>5.1}%)",
+                    r.lineage, r.card_count, r.avg_deck_points, r.avg_ehp, r.avg_ehp_per_point, r.wins, r.matches_played, r.win_rate_pct
+                );
+            }
+            if let Some(ref jp) = export_json {
+                export_balance_scorecard_json(jp, &sc).map_err(|e| anyhow::anyhow!(e))?;
+                println!("[wf_sim] Exported balance scorecard JSON to {}", jp.display());
+            }
+            if let Some(ref cp) = export_csv {
+                export_balance_scorecard_csv(cp, &sc).map_err(|e| anyhow::anyhow!(e))?;
+                println!("[wf_sim] Exported balance scorecard CSV to {}", cp.display());
             }
         }
         Commands::VerifyReplay { replay_path } => {

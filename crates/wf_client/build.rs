@@ -124,21 +124,21 @@ fn main() {
     let node_count = u32::try_from(vox_gpu.nodes.len()).expect("node count fits u32");
     enc.write_all(&node_count.to_le_bytes()).expect("write node count");
     for n in &vox_gpu.nodes {
-        enc.write_all(&n.mask_lo.to_le_bytes()).unwrap();
-        enc.write_all(&n.mask_hi.to_le_bytes()).unwrap();
-        enc.write_all(&n.child_base_ptr.to_le_bytes()).unwrap();
-        enc.write_all(&n.flags_and_lod_rgba.to_le_bytes()).unwrap();
+        enc.write_all(&n.mask_lo.to_le_bytes()).expect("write node mask_lo");
+        enc.write_all(&n.mask_hi.to_le_bytes()).expect("write node mask_hi");
+        enc.write_all(&n.child_base_ptr.to_le_bytes()).expect("write node child_base_ptr");
+        enc.write_all(&n.flags_and_lod_rgba.to_le_bytes()).expect("write node flags_and_lod_rgba");
     }
 
     let brick_count = u32::try_from(vox_gpu.bricks.len()).expect("brick count fits u32");
     enc.write_all(&brick_count.to_le_bytes()).expect("write brick count");
     for b in &vox_gpu.bricks {
-        enc.write_all(&b.mask_lo.to_le_bytes()).unwrap();
-        enc.write_all(&b.mask_hi.to_le_bytes()).unwrap();
-        enc.write_all(&b.lod_rgba.to_le_bytes()).unwrap();
-        enc.write_all(&b._pad.to_le_bytes()).unwrap();
+        enc.write_all(&b.mask_lo.to_le_bytes()).expect("write brick mask_lo");
+        enc.write_all(&b.mask_hi.to_le_bytes()).expect("write brick mask_hi");
+        enc.write_all(&b.lod_rgba.to_le_bytes()).expect("write brick lod_rgba");
+        enc.write_all(&b._pad.to_le_bytes()).expect("write brick padding");
         for m in &b.packed_mats {
-            enc.write_all(&m.to_le_bytes()).unwrap();
+            enc.write_all(&m.to_le_bytes()).expect("write brick packed_mats");
         }
     }
 
@@ -147,11 +147,11 @@ fn main() {
     for (slug, h) in &vox_gpu.handles {
         let slug_bytes = slug.as_bytes();
         let slug_len = u32::try_from(slug_bytes.len()).expect("slug length fits u32");
-        enc.write_all(&slug_len.to_le_bytes()).unwrap();
-        enc.write_all(slug_bytes).unwrap();
-        enc.write_all(&h.root_node_index.to_le_bytes()).unwrap();
+        enc.write_all(&slug_len.to_le_bytes()).expect("write handle slug length");
+        enc.write_all(slug_bytes).expect("write handle slug bytes");
+        enc.write_all(&h.root_node_index.to_le_bytes()).expect("write handle root_node_index");
         for s in h.size_voxels {
-            enc.write_all(&s.to_le_bytes()).unwrap();
+            enc.write_all(&s.to_le_bytes()).expect("write handle size_voxels");
         }
     }
 

@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://gnu.org>.
 
+#![forbid(unsafe_code)]
+
 //! Headless deterministic match simulator, 2-ply tactical lookahead AI planner,
 //! action-stream replay verifier, and automated 102-match tournament benchmark suite
 //! for *Wildfront Battlegrounds* (`v3.4.0`).
@@ -28,6 +30,8 @@ pub use sim_engine::{
     HeadlessMatch, MatchReplayFile, RecordedActionStep, SimAction, SimEntity, TurnTelemetryPoint,
 };
 pub use tournament::{
-    build_tournament_deck, run_102_round_robin, ArchetypeStanding, MatchSummaryRow,
+    build_balance_scorecard, build_tournament_deck, export_balance_scorecard_csv,
+    export_balance_scorecard_json, run_102_round_robin, scorecard_to_csv, scorecard_to_json,
+    ArchetypeStanding, BalanceScorecard, ContinentBalanceRow, LineageBalanceRow, MatchSummaryRow,
     TournamentReport,
 };

@@ -347,3 +347,402 @@ pub fn run_102_round_robin(
         matches,
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineageBalanceRow {
+    pub lineage: String,
+    pub card_count: usize,
+    pub avg_deck_points: f32,
+    pub avg_ehp: f32,
+    pub avg_ehp_per_point: f32,
+    pub max_ehp: f32,
+    pub matches_played: u32,
+    pub wins: u32,
+    pub win_rate_pct: f32,
+    pub avg_turns: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContinentBalanceRow {
+    pub continent: String,
+    pub card_count: usize,
+    pub avg_deck_points: f32,
+    pub avg_ehp: f32,
+    pub matches_played: u32,
+    pub wins: u32,
+    pub win_rate_pct: f32,
+    pub avg_turns: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BalanceScorecard {
+    pub schema_version: String,
+    pub engine_version: String,
+    pub ai_difficulty: String,
+    pub total_cards: usize,
+    pub total_matches: usize,
+    pub decisive_matches: usize,
+    pub p1_win_rate_pct: f32,
+    pub p2_win_rate_pct: f32,
+    pub median_turns: f32,
+    pub lineages: Vec<LineageBalanceRow>,
+    pub continents: Vec<ContinentBalanceRow>,
+}
+
+fn json_escape_str(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 8);
+    for ch in raw.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 || c.is_control() => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn csv_escape_cell(raw: &str) -> String {
+    if raw.contains(',') || raw.contains('"') || raw.contains('\n') || raw.contains('\r') {
+        format!("\"{}\"", raw.replace('"', "\"\""))
+    } else {
+        raw.to_string()
+    }
+}
+
+pub fn build_balance_scorecard(
+    roster: &RosterManifest,
+    report: Option<&TournamentReport>,
+) -> BalanceScorecard {
+    let mut lineage_standings: BTreeMap<String, &ArchetypeStanding> = BTreeMap::new();
+    let mut continent_standings: BTreeMap<String, &ArchetypeStanding> = BTreeMap::new();
+    if let Some(rep) = report {
+        for st in &rep.standings {
+            if st.category == "Pure Bio-Type" {
+                lineage_standings.insert(st.name.clone(), st);
+            } else if st.category == "Continent" {
+                continent_standings.insert(st.name.clone(), st);
+            }
+        }
+    }
+
+    let mut lineages = Vec::with_capacity(OrganismFaction::ALL.len());
+    for &fac in &OrganismFaction::ALL {
+        let units: Vec<_> = roster.units.iter().filter(|u| u.faction == fac).collect();
+        let n = units.len();
+        let avg_pts = if n == 0 {
+            0.0
+        } else {
+            units.iter().map(|u| f32::from(u.deck_points)).sum::<f32>() / (n as f32)
+        };
+        let avg_ehp = if n == 0 {
+            0.0
+        } else {
+            units
+                .iter()
+                .map(|u| f32::from(u.combat_ehp_tenths) * 0.1)
+                .sum::<f32>()
+                / (n as f32)
+        };
+        let avg_ehp_per_point = if n == 0 {
+            0.0
+        } else {
+            let valid: Vec<f32> = units
+                .iter()
+                .filter(|u| u.deck_points > 0)
+                .map(|u| (f32::from(u.combat_ehp_tenths) * 0.1) / f32::from(u.deck_points))
+                .collect();
+            if valid.is_empty() {
+                0.0
+            } else {
+                valid.iter().sum::<f32>() / (valid.len() as f32)
+            }
+        };
+        let max_ehp = units
+            .iter()
+            .map(|u| f32::from(u.combat_ehp_tenths) * 0.1)
+            .fold(0.0_f32, f32::max);
+
+        let key = format!("Pure {:?}", fac);
+        let st = lineage_standings.get(&key).copied();
+        lineages.push(LineageBalanceRow {
+            lineage: format!("{:?}", fac),
+            card_count: n,
+            avg_deck_points: avg_pts,
+            avg_ehp,
+            avg_ehp_per_point,
+            max_ehp,
+            matches_played: st.map(|s| s.games).unwrap_or(0),
+            wins: st.map(|s| s.wins).unwrap_or(0),
+            win_rate_pct: st.map(|s| s.win_rate_pct).unwrap_or(0.0),
+            avg_turns: st.map(|s| s.avg_turns).unwrap_or(0.0),
+        });
+    }
+
+    let orig_list = [
+        OriginAllegiance::Australia,
+        OriginAllegiance::Africa,
+        OriginAllegiance::Asia,
+        OriginAllegiance::Europe,
+        OriginAllegiance::NorthAmerica,
+        OriginAllegiance::SouthAmerica,
+        OriginAllegiance::Neutral,
+    ];
+    let mut continents = Vec::with_capacity(orig_list.len());
+    for &orig in &orig_list {
+        let units: Vec<_> = roster.units.iter().filter(|u| u.origin == orig).collect();
+        let n = units.len();
+        let avg_pts = if n == 0 {
+            0.0
+        } else {
+            units.iter().map(|u| f32::from(u.deck_points)).sum::<f32>() / (n as f32)
+        };
+        let avg_ehp = if n == 0 {
+            0.0
+        } else {
+            units
+                .iter()
+                .map(|u| f32::from(u.combat_ehp_tenths) * 0.1)
+                .sum::<f32>()
+                / (n as f32)
+        };
+        let key = format!("{:?}", orig);
+        let st = continent_standings.get(&key).copied();
+        continents.push(ContinentBalanceRow {
+            continent: key,
+            card_count: n,
+            avg_deck_points: avg_pts,
+            avg_ehp,
+            matches_played: st.map(|s| s.games).unwrap_or(0),
+            wins: st.map(|s| s.wins).unwrap_or(0),
+            win_rate_pct: st.map(|s| s.win_rate_pct).unwrap_or(0.0),
+            avg_turns: st.map(|s| s.avg_turns).unwrap_or(0.0),
+        });
+    }
+
+    let (ai_difficulty, total_matches, decisive_matches, p1_win_rate_pct, p2_win_rate_pct, median_turns) =
+        if let Some(rep) = report {
+            let denom = rep.decisive_matches.max(1) as f32;
+            (
+                rep.ai_difficulty.clone(),
+                rep.total_matches,
+                rep.decisive_matches,
+                (rep.p1_wins as f32 * 100.0) / denom,
+                (rep.p2_wins as f32 * 100.0) / denom,
+                rep.median_turns,
+            )
+        } else {
+            ("Roster-Only".to_string(), 0, 0, 0.0, 0.0, 0.0)
+        };
+
+    BalanceScorecard {
+        schema_version: "1.0".to_string(),
+        engine_version: "3.4.1".to_string(),
+        ai_difficulty,
+        total_cards: roster.units.len(),
+        total_matches,
+        decisive_matches,
+        p1_win_rate_pct,
+        p2_win_rate_pct,
+        median_turns,
+        lineages,
+        continents,
+    }
+}
+
+pub fn scorecard_to_json(sc: &BalanceScorecard) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&format!(
+        "  \"schema_version\": \"{}\",\n  \"engine_version\": \"{}\",\n  \"ai_difficulty\": \"{}\",\n",
+        json_escape_str(&sc.schema_version),
+        json_escape_str(&sc.engine_version),
+        json_escape_str(&sc.ai_difficulty)
+    ));
+    out.push_str(&format!(
+        "  \"total_cards\": {},\n  \"total_matches\": {},\n  \"decisive_matches\": {},\n  \"p1_win_rate_pct\": {:.2},\n  \"p2_win_rate_pct\": {:.2},\n  \"median_turns\": {:.2},\n",
+        sc.total_cards, sc.total_matches, sc.decisive_matches, sc.p1_win_rate_pct, sc.p2_win_rate_pct, sc.median_turns
+    ));
+    out.push_str("  \"lineages\": [\n");
+    for (i, r) in sc.lineages.iter().enumerate() {
+        let comma = if i + 1 < sc.lineages.len() { "," } else { "" };
+        out.push_str(&format!(
+            "    {{\"lineage\": \"{}\", \"card_count\": {}, \"avg_deck_points\": {:.2}, \"avg_ehp\": {:.2}, \"avg_ehp_per_point\": {:.4}, \"max_ehp\": {:.2}, \"matches_played\": {}, \"wins\": {}, \"win_rate_pct\": {:.2}, \"avg_turns\": {:.2}}}{}\n",
+            json_escape_str(&r.lineage),
+            r.card_count,
+            r.avg_deck_points,
+            r.avg_ehp,
+            r.avg_ehp_per_point,
+            r.max_ehp,
+            r.matches_played,
+            r.wins,
+            r.win_rate_pct,
+            r.avg_turns,
+            comma
+        ));
+    }
+    out.push_str("  ],\n  \"continents\": [\n");
+    for (i, r) in sc.continents.iter().enumerate() {
+        let comma = if i + 1 < sc.continents.len() { "," } else { "" };
+        out.push_str(&format!(
+            "    {{\"continent\": \"{}\", \"card_count\": {}, \"avg_deck_points\": {:.2}, \"avg_ehp\": {:.2}, \"matches_played\": {}, \"wins\": {}, \"win_rate_pct\": {:.2}, \"avg_turns\": {:.2}}}{}\n",
+            json_escape_str(&r.continent),
+            r.card_count,
+            r.avg_deck_points,
+            r.avg_ehp,
+            r.matches_played,
+            r.wins,
+            r.win_rate_pct,
+            r.avg_turns,
+            comma
+        ));
+    }
+    out.push_str("  ]\n}\n");
+    out
+}
+
+pub fn scorecard_to_csv(sc: &BalanceScorecard) -> String {
+    let mut lines = Vec::with_capacity(1 + sc.lineages.len() + sc.continents.len());
+    lines.push(
+        "category,name,card_count,avg_deck_points,avg_ehp,avg_ehp_per_point,max_ehp,matches_played,wins,win_rate_pct,avg_turns"
+            .to_string(),
+    );
+    for r in &sc.lineages {
+        lines.push(format!(
+            "lineage,{},{},{:.2},{:.2},{:.4},{:.2},{},{},{:.2},{:.2}",
+            csv_escape_cell(&r.lineage),
+            r.card_count,
+            r.avg_deck_points,
+            r.avg_ehp,
+            r.avg_ehp_per_point,
+            r.max_ehp,
+            r.matches_played,
+            r.wins,
+            r.win_rate_pct,
+            r.avg_turns,
+        ));
+    }
+    for r in &sc.continents {
+        let ehp_pt = if r.avg_deck_points > 0.0 {
+            r.avg_ehp / r.avg_deck_points
+        } else {
+            0.0
+        };
+        lines.push(format!(
+            "continent,{},{},{:.2},{:.2},{:.4},{:.2},{},{},{:.2},{:.2}",
+            csv_escape_cell(&r.continent),
+            r.card_count,
+            r.avg_deck_points,
+            r.avg_ehp,
+            ehp_pt,
+            r.avg_ehp,
+            r.matches_played,
+            r.wins,
+            r.win_rate_pct,
+            r.avg_turns,
+        ));
+    }
+    lines.join("\n") + "\n"
+}
+
+pub fn export_balance_scorecard_json(
+    path: impl AsRef<std::path::Path>,
+    sc: &BalanceScorecard,
+) -> Result<(), String> {
+    if let Some(parent) = path.as_ref().parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed creating scorecard directory: {e}"))?;
+        }
+    }
+    std::fs::write(path, scorecard_to_json(sc))
+        .map_err(|e| format!("Failed writing scorecard JSON: {e}"))
+}
+
+pub fn export_balance_scorecard_csv(
+    path: impl AsRef<std::path::Path>,
+    sc: &BalanceScorecard,
+) -> Result<(), String> {
+    if let Some(parent) = path.as_ref().parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed creating scorecard directory: {e}"))?;
+        }
+    }
+    std::fs::write(path, scorecard_to_csv(sc))
+        .map_err(|e| format!("Failed writing scorecard CSV: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn balance_scorecard_json_and_csv_cover_all_lineages_and_continents() {
+        let raw = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/compiled/master_roster.ron"),
+        )
+        .expect("read master_roster.ron");
+        let roster: RosterManifest = ron::from_str(&raw).expect("parse master_roster.ron");
+
+        let mock_report = TournamentReport {
+            engine_version: "3.4.1".into(),
+            ai_difficulty: "Veteran (1-Ply EV Focus)".into(),
+            total_matches: 102,
+            decisive_matches: 83,
+            p1_wins: 55,
+            p2_wins: 28,
+            median_turns: 14.0,
+            standings: vec![
+                ArchetypeStanding {
+                    name: "Pure Mammal".into(),
+                    category: "Pure Bio-Type".into(),
+                    games: 16,
+                    wins: 11,
+                    win_rate_pct: 68.75,
+                    avg_turns: 13.5,
+                },
+                ArchetypeStanding {
+                    name: "Australia".into(),
+                    category: "Continent".into(),
+                    games: 10,
+                    wins: 6,
+                    win_rate_pct: 60.0,
+                    avg_turns: 15.0,
+                },
+            ],
+            matches: Vec::new(),
+        };
+
+        let sc = build_balance_scorecard(&roster, Some(&mock_report));
+        assert_eq!(sc.lineages.len(), 10);
+        assert_eq!(sc.continents.len(), 7);
+        assert!(sc.total_cards >= 150);
+
+        let mammal = sc
+            .lineages
+            .iter()
+            .find(|l| l.lineage == "Mammal")
+            .expect("Mammal row");
+        assert!(mammal.avg_ehp > 0.0);
+        assert_eq!(mammal.wins, 11);
+        assert!((mammal.win_rate_pct - 68.75).abs() < 0.01);
+
+        let json = scorecard_to_json(&sc);
+        assert!(json.contains("\"lineages\":"));
+        assert!(json.contains("\"continents\":"));
+        assert!(json.contains("\"avg_ehp_per_point\""));
+
+        let csv = scorecard_to_csv(&sc);
+        // 1 header + 10 lineages + 7 continents = 18 lines
+        assert_eq!(csv.lines().count(), 18);
+        assert!(csv.contains("lineage,Mammal,"));
+        assert!(csv.contains("continent,Australia,"));
+    }
+}

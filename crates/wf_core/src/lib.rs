@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://gnu.org>.
 
+#![forbid(unsafe_code)]
+
 //! Core deterministic rules, balanced unit/ability schemas, Sparse 64-Tree voxel hierarchy,
 //! procedural hexagonal environments, scenarios, logistics graphs, and combat math
 //! for *Wildfront Battlegrounds*.

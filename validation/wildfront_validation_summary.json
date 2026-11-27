@@ -41,7 +41,7 @@
 "p1_wins": 55,
 "p2_wins": 28,
 "median_turns": 14.00,
-"tournament_wall_ms": 35215.05,
+"tournament_wall_ms": 24180.73,
 "csv_bytes": 10429,
 "combat_class_counts": { "Artifact": 7, "Commander": 6, "ControlNode": 1, "Heavy": 27, "Installation": 6, "Light": 22, "Medic": 9, "Medium": 29, "SupplyDepot": 1, "Support": 9, "SupportInstallation": 5, "TacticalDeployment": 19, "Trap": 11 },
 "standings": [
@@ -76,7 +76,7 @@
 "interior_voxel_hits": 542,
 "benchmark_rays": 24000,
 "benchmark_hits": 14691,
-"benchmark_elapsed_ms": 79.50,
-"cpu_debug_rays_per_sec": 301891.7
+"benchmark_elapsed_ms": 25.32,
+"cpu_debug_rays_per_sec": 947721.3
 }
 }

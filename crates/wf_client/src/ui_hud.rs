@@ -38,6 +38,7 @@ pub struct HudActions {
     pub cycle_atmosphere: bool,
     pub toggle_main_menu: bool,
     pub toggle_codex: bool,
+    pub toggle_command_palette: bool,
     pub open_about: bool,
     pub quicksave: bool,
     pub quickload: bool,
@@ -63,6 +64,7 @@ impl Default for HudActions {
             cycle_atmosphere: false,
             toggle_main_menu: false,
             toggle_codex: false,
+            toggle_command_palette: false,
             open_about: false,
             quicksave: false,
             quickload: false,
@@ -125,6 +127,9 @@ pub fn draw_tactical_hud(
                 }
                 if ui.button("📖 Codex (F1)").on_hover_text("Open Rules, Faction Doctrines & Hotkey Codex (F1)").clicked() {
                     actions.toggle_codex = true;
+                }
+                if ui.button("⌘ Palette (Ctrl+K)").on_hover_text("Quick-Command Palette: Codex, Deck Builder, 5 Studios, Scenarios 1-5, Sky Presets, Camera Reset, Quicksave/Load (Ctrl+K)").clicked() {
+                    actions.toggle_command_palette = true;
                 }
                 ui.menu_button("🛠 Studios ▾", |ui| {
                     ui.set_min_width(230.0);

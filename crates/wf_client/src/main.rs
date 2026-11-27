@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![deny(unsafe_code)]
 
 // Copyright (C) 2026 CRV Science Network (https://crvscience.com)
 //
@@ -231,6 +232,8 @@ struct WildfrontApp {
     last_frame_instant: Instant,
     show_about: bool,
     end_turn_confirm_open: bool,
+    command_palette_open: bool,
+    command_palette_query: String,
 }
 
 fn board_pan_bounds(map: &wf_core::BattleHexMap) -> (f32, f32, f32, f32) {
@@ -265,6 +268,7 @@ struct ModalUiSnapshot {
     end_turn_confirm_open: bool,
     outcome_modal_open: bool,
     hotseat_handoff_open: bool,
+    command_palette_open: bool,
 }
 
 impl ModalUiSnapshot {
@@ -281,6 +285,7 @@ impl ModalUiSnapshot {
             || self.end_turn_confirm_open
             || self.outcome_modal_open
             || self.hotseat_handoff_open
+            || self.command_palette_open
     }
 
     fn any_blocking_camera_hotkey(self) -> bool {
@@ -295,6 +300,7 @@ impl ModalUiSnapshot {
             || self.end_turn_confirm_open
             || self.outcome_modal_open
             || self.hotseat_handoff_open
+            || self.command_palette_open
     }
 
     fn any_blocking_submodal_toggle(self) -> bool {
@@ -302,6 +308,7 @@ impl ModalUiSnapshot {
             || self.end_turn_confirm_open
             || self.outcome_modal_open
             || self.hotseat_handoff_open
+            || self.command_palette_open
     }
 
     fn can_space_trigger_dice_roll(self) -> bool {
@@ -317,6 +324,7 @@ impl ModalUiSnapshot {
             && !self.end_turn_confirm_open
             && !self.outcome_modal_open
             && !self.hotseat_handoff_open
+            && !self.command_palette_open
     }
 
     fn can_space_reveal_handoff(self) -> bool {
@@ -332,6 +340,7 @@ impl ModalUiSnapshot {
             && !self.about_open
             && !self.end_turn_confirm_open
             && !self.outcome_modal_open
+            && !self.command_palette_open
     }
 
     fn can_space_request_end_turn(self) -> bool {
@@ -411,6 +420,179 @@ fn draw_about_modal(root_ui: &mut egui::Ui, show_about: &mut bool) {
     }
 }
 
+#[derive(Default)]
+struct PaletteCommandResult {
+    open_codex: bool,
+    open_deck_builder: bool,
+    open_stl_studio: bool,
+    open_db_manager: bool,
+    open_map_editor: bool,
+    open_replay_theater: bool,
+    open_dice_roller: bool,
+    select_scenario: Option<ScenarioId>,
+    set_sky_preset: Option<u8>,
+    reset_camera: bool,
+    quicksave: bool,
+    quickload: bool,
+    export_scorecard_json: bool,
+    export_scorecard_csv: bool,
+}
+
+fn draw_command_palette_modal(
+    root_ui: &mut egui::Ui,
+    is_open: &mut bool,
+    query: &mut String,
+) -> PaletteCommandResult {
+    let mut res = PaletteCommandResult::default();
+    if !*is_open {
+        return res;
+    }
+    let ctx = root_ui.ctx().clone();
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        *is_open = false;
+        return res;
+    }
+    let mut open = *is_open;
+    let mut close_now = false;
+    egui::Window::new("⌘ Quick-Command Palette (Ctrl+K)")
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_TOP, [0.0, 62.0])
+        .collapsible(false)
+        .resizable(false)
+        .order(egui::Order::Foreground)
+        .frame(
+            egui::Frame::NONE
+                .fill(egui::Color32::from_rgba_unmultiplied(12, 20, 28, 250))
+                .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(76, 212, 236)))
+                .corner_radius(10)
+                .inner_margin(egui::Margin::same(16)),
+        )
+        .show(&ctx, |ui| {
+            ui.set_min_width(500.0);
+            ui.set_max_width(540.0);
+            let resp = ui.add(
+                egui::TextEdit::singleline(query)
+                    .id_salt("wf_command_palette_input")
+                    .desired_width(f32::INFINITY)
+                    .hint_text("Jump to Codex, Deck Builder, 5 Studios, Scenarios 1-5, Sky Presets, Camera, Quicksave/Load..."),
+            );
+            resp.request_focus();
+            ui.separator();
+
+            let q = query.trim().to_ascii_lowercase();
+            let matches = |hay: &str| -> bool {
+                q.is_empty()
+                    || q.split_whitespace()
+                        .all(|tok| hay.to_ascii_lowercase().contains(tok))
+            };
+
+            egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
+                if matches("open field manual codex rules f1")
+                    && ui.button("[Panel] Open Field Manual Codex (F1)").clicked()
+                {
+                    res.open_codex = true;
+                    close_now = true;
+                }
+                if matches("open 250pt deck builder b")
+                    && ui.button("[Panel] Open 250-Pt Deck Builder (B)").clicked()
+                {
+                    res.open_deck_builder = true;
+                    close_now = true;
+                }
+                ui.separator();
+                if matches("studio 3d print stl export f8")
+                    && ui.button("[Studio 1] 3D Print .STL Studio (F8)").clicked()
+                {
+                    res.open_stl_studio = true;
+                    close_now = true;
+                }
+                if matches("studio unit model database manager sqlite f2")
+                    && ui.button("[Studio 2] Unit & Model Database Manager (F2)").clicked()
+                {
+                    res.open_db_manager = true;
+                    close_now = true;
+                }
+                if matches("studio 3d hex map scenario editor f3")
+                    && ui.button("[Studio 3] 3D Hex Map & Scenario Studio (F3)").clicked()
+                {
+                    res.open_map_editor = true;
+                    close_now = true;
+                }
+                if matches("studio replay telemetry theater ehp f4")
+                    && ui.button("[Studio 4] Replay & EHP Telemetry Theater (F4)").clicked()
+                {
+                    res.open_replay_theater = true;
+                    close_now = true;
+                }
+                if matches("studio combat dice simulator roller r")
+                    && ui.button("[Studio 5] Combat Dice Simulator (R)").clicked()
+                {
+                    res.open_dice_roller = true;
+                    close_now = true;
+                }
+
+                ui.separator();
+                for (idx, sid) in ScenarioId::ALL.iter().copied().enumerate() {
+                    let lbl = format!("[Scenario {}] {}", idx + 1, sid.title());
+                    if matches(&lbl) && ui.button(&lbl).clicked() {
+                        res.select_scenario = Some(sid);
+                        close_now = true;
+                    }
+                }
+
+                ui.separator();
+                for (mode, lbl) in [
+                    (0u8, "[Sky 1] Clear Daylight (Auto Storm R30+)"),
+                    (1u8, "[Sky 2] Dusk Tactical"),
+                    (2u8, "[Sky 3] Orbital Fallout Storm"),
+                    (3u8, "[Sky 4] Night Bio-Luminescence"),
+                ] {
+                    if matches(lbl) && ui.button(lbl).clicked() {
+                        res.set_sky_preset = Some(mode);
+                        close_now = true;
+                    }
+                }
+
+                ui.separator();
+                if matches("reset camera tactical overview home c")
+                    && ui.button("[Camera] Reset Tactical Overview (Home / C)").clicked()
+                {
+                    res.reset_camera = true;
+                    close_now = true;
+                }
+                if matches("quicksave save match ron f5")
+                    && ui.button("[Save] Quicksave Match (F5)").clicked()
+                {
+                    res.quicksave = true;
+                    close_now = true;
+                }
+                if matches("quickload load match ron f9")
+                    && ui.button("[Save] Quickload Match (F9)").clicked()
+                {
+                    res.quickload = true;
+                    close_now = true;
+                }
+                if matches("export faction lineage ehp win-rate balance scorecard json")
+                    && ui.button("[Analytics] Export Faction/Lineage Balance Scorecard (.JSON)").clicked()
+                {
+                    res.export_scorecard_json = true;
+                    close_now = true;
+                }
+                if matches("export faction lineage ehp win-rate balance scorecard csv")
+                    && ui.button("[Analytics] Export Faction/Lineage Balance Scorecard (.CSV)").clicked()
+                {
+                    res.export_scorecard_csv = true;
+                    close_now = true;
+                }
+            });
+        });
+    if close_now {
+        open = false;
+    }
+    *is_open = open;
+    res
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_escape_priority(
     show_about: &mut bool,
@@ -466,6 +648,7 @@ impl WildfrontApp {
             hotseat_handoff_open: self.session.hotseat_mode
                 && self.session.hotseat_handoff_pending
                 && self.session.match_outcome.is_none(),
+            command_palette_open: self.command_palette_open,
         }
     }
 
@@ -673,7 +856,9 @@ impl ApplicationHandler for WildfrontApp {
                 let mut camera_changed = false;
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::Escape) => {
-                        if self.end_turn_confirm_open {
+                        if self.command_palette_open {
+                            self.command_palette_open = false;
+                        } else if self.end_turn_confirm_open {
                             self.end_turn_confirm_open = false;
                         } else {
                             handle_escape_priority(
@@ -1067,6 +1252,7 @@ impl ApplicationHandler for WildfrontApp {
                 let prev_view_sig = (self.session.fog_enabled, self.session.hotseat_mode, self.session.hotseat_handoff_pending, self.session.viewing_team(), self.session.mode);
                 let mut hud_actions = Default::default();
                 let mut menu_actions = Default::default();
+                let mut palette_res = PaletteCommandResult::default();
                 let mut launched_custom_deck: Option<(usize, DeckList)> = None;
                 let mut confirm_end_turn_now = false;
                 let mut paint_jobs = Vec::new();
@@ -1086,6 +1272,12 @@ impl ApplicationHandler for WildfrontApp {
                     let cur_seed = self.active_seed;
 
                     let full_output = self.egui_ctx.run_ui(raw_input, |root_ui| {
+                        if root_ui
+                            .ctx()
+                            .input(|i| (i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(egui::Key::K))
+                        {
+                            self.command_palette_open = !self.command_palette_open;
+                        }
                         if !self.main_menu.is_open {
                             hud_actions = draw_tactical_hud(
                                 root_ui,
@@ -1158,6 +1350,11 @@ impl ApplicationHandler for WildfrontApp {
                             launched_custom_deck = Some(new_deck);
                         }
                         draw_about_modal(root_ui, &mut self.show_about);
+                        palette_res = draw_command_palette_modal(
+                            root_ui,
+                            &mut self.command_palette_open,
+                            &mut self.command_palette_query,
+                        );
                         if self.end_turn_confirm_open
                             && (self.main_menu.is_open || !self.session.can_local_player_act())
                         {
@@ -1196,6 +1393,80 @@ impl ApplicationHandler for WildfrontApp {
                 }
                 if hud_actions.toggle_codex || menu_actions.open_codex {
                     self.codex.is_open = !self.codex.is_open;
+                }
+                if hud_actions.toggle_command_palette {
+                    self.command_palette_open = !self.command_palette_open;
+                }
+                if palette_res.open_codex {
+                    self.codex.is_open = true;
+                }
+                if palette_res.open_deck_builder {
+                    self.deck_builder.is_open = true;
+                }
+                if palette_res.open_stl_studio {
+                    self.stl_studio.is_open = true;
+                }
+                if palette_res.open_db_manager {
+                    self.db_manager.is_open = true;
+                }
+                if palette_res.open_map_editor {
+                    self.map_editor.is_open = true;
+                    self.main_menu.is_open = false;
+                    scene_mutated = true;
+                }
+                if palette_res.open_replay_theater {
+                    self.replay_theater.is_open = true;
+                    self.replay_theater.sync_to_latest(&self.session);
+                    self.main_menu.is_open = false;
+                    scene_mutated = true;
+                }
+                if palette_res.open_dice_roller {
+                    self.dice_roller.open_with_selection(&self.session);
+                }
+                if let Some(sid) = palette_res.select_scenario {
+                    self.main_menu.has_started_match = true;
+                    self.main_menu.is_open = false;
+                    hud_actions.switch_scenario = Some(sid);
+                }
+                if let Some(sky_mode) = palette_res.set_sky_preset {
+                    self.camera.atmosphere_mode = u32::from(sky_mode % 4);
+                    let sky_lbl = match self.camera.atmosphere_mode {
+                        0 => "🌤 Sky: Clear Daylight (Auto Storm R30+)",
+                        1 => "🌅 Sky: Dusk Tactical",
+                        2 => "☄ Sky: Orbital Fallout Storm",
+                        _ => "🌙 Sky: Night Bio-Luminescence",
+                    };
+                    self.session.push_toast(sky_lbl);
+                }
+                if palette_res.reset_camera {
+                    self.camera.reset_view();
+                    let bounds = board_pan_bounds(&self.session.scenario.map);
+                    self.camera.clamp_target_to_bounds(bounds);
+                    self.session.push_toast("🎯 Camera reset to tactical overview");
+                }
+                if palette_res.quicksave {
+                    hud_actions.quicksave = true;
+                }
+                if palette_res.quickload {
+                    hud_actions.quickload = true;
+                    self.main_menu.has_started_match = true;
+                    self.main_menu.is_open = false;
+                }
+                if palette_res.export_scorecard_json {
+                    let out_p = crate::paths::writable_app_path("reports/wildfront_balance_scorecard.json");
+                    let sc = wf_sim::build_balance_scorecard(&self.session.roster, None);
+                    match wf_sim::export_balance_scorecard_json(&out_p, &sc) {
+                        Ok(()) => self.session.push_toast(format!("📊 Saved scorecard JSON to {}", out_p.display())),
+                        Err(e) => self.session.push_toast(format!("⚠ Scorecard export failed: {e}")),
+                    }
+                }
+                if palette_res.export_scorecard_csv {
+                    let out_p = crate::paths::writable_app_path("reports/wildfront_balance_scorecard.csv");
+                    let sc = wf_sim::build_balance_scorecard(&self.session.roster, None);
+                    match wf_sim::export_balance_scorecard_csv(&out_p, &sc) {
+                        Ok(()) => self.session.push_toast(format!("📊 Saved scorecard CSV to {}", out_p.display())),
+                        Err(e) => self.session.push_toast(format!("⚠ Scorecard export failed: {e}")),
+                    }
                 }
                 if hud_actions.open_about || menu_actions.open_about {
                     self.show_about = !self.show_about;
@@ -1885,6 +2156,7 @@ fn render_headless_screenshot(app: &mut WildfrontApp, out_path: &std::path::Path
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn attach_parent_console() {
     const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
     #[link(name = "kernel32")]
@@ -2038,6 +2310,8 @@ fn main() {
         last_frame_instant: Instant::now(),
         show_about: false,
         end_turn_confirm_open: false,
+        command_palette_open: false,
+        command_palette_query: String::new(),
     };
     crate::paths::install_ui_fonts(&app.egui_ctx);
     if let CliAction::Screenshot { out_path, view } = cli_action {
@@ -2237,5 +2511,36 @@ mod tests {
         assert_eq!(cam.distance, def.distance);
         assert_eq!(cam.yaw, def.yaw);
         assert_eq!(cam.pitch, def.pitch);
+    }
+
+    #[test]
+    fn command_palette_blocks_gameplay_hotkeys_and_dismisses_on_escape() {
+        let mut snap = ModalUiSnapshot::default();
+        assert!(!snap.any_blocking_gameplay_hotkey());
+        snap.command_palette_open = true;
+        assert!(snap.any_blocking_gameplay_hotkey());
+        assert!(snap.any_blocking_camera_hotkey());
+
+        let ctx = egui::Context::default();
+        let mut open = true;
+        let mut query = String::from("scenario");
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1280.0, 800.0),
+            )),
+            events: vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(raw, |root_ui| {
+            let _ = draw_command_palette_modal(root_ui, &mut open, &mut query);
+        });
+        assert!(!open, "Escape should close the Ctrl+K command palette");
     }
 }
